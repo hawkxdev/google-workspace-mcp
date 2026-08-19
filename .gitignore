@@ -1,0 +1,15 @@
+.env*
+!.env.example
+.venv/
+__pycache__/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.DS_Store
+*.sqlite3
+*.sqlite3-journal
+*.pem
+*.key
+deploy-key*
+state/
+audit/
