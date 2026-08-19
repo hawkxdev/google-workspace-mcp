@@ -1,0 +1,81 @@
+[project]
+name = 'google-workspace-mcp'
+version = '0.1.0'
+description = 'Private remote MCP servers for Google Workspace'
+readme = 'README.md'
+requires-python = '>=3.14'
+license = { file = 'LICENSE' }
+dependencies = [
+    # mcp 2.0 заменил mcp.server.fastmcp на mcp.server.mcpserver;
+    # донорская граница <2 вызвана чужим апстримом и здесь не нужна.
+    # Extra [cli] не берём: он тянет typer и python-dotenv, а точки
+    # входа у нас свои и .env читает pydantic-settings
+    'mcp>=2,<3',
+    'google-auth>=2.56,<3',
+    'google-auth-oauthlib>=1.4,<2',
+    'google-api-python-client>=2.198,<3',
+    # нижняя граница продиктована самим mcp 2.0: pydantic>=2.12.0
+    'pydantic>=2.12,<3',
+    'pydantic-settings>=2.0,<3',
+]
+
+[project.scripts]
+google-mcp-gmail = 'google_workspace_mcp.cli.gmail:main'
+google-mcp-calendar = 'google_workspace_mcp.cli.calendar:main'
+google-mcp-drive = 'google_workspace_mcp.cli.drive:main'
+google-mcp-sheets = 'google_workspace_mcp.cli.sheets:main'
+google-mcp-docs = 'google_workspace_mcp.cli.docs:main'
+
+[dependency-groups]
+dev = [
+    'pytest>=9.0,<10',
+    'pytest-asyncio>=1.4,<2',
+    'ruff>=0.16,<0.17',
+    'mypy>=2.3,<3',
+]
+
+[build-system]
+requires = ['hatchling']
+build-backend = 'hatchling.build'
+
+[tool.hatch.build.targets.wheel]
+packages = ['src/google_workspace_mcp']
+
+[tool.pytest.ini_options]
+testpaths = ['tests']
+addopts = '--strict-markers -ra --import-mode=importlib'
+asyncio_mode = 'auto'
+asyncio_default_fixture_loop_scope = 'function'
+
+[tool.ruff]
+line-length = 79
+
+[tool.ruff.lint]
+# 'E' целиком, а не E4/E7: правило E501 живёт только в широком
+# селекторе, а проект держит жёсткий лимит длины строки
+select = ['E', 'F', 'I', 'SIM', 'UP', 'S', 'G']
+
+[tool.ruff.lint.per-file-ignores]
+'tests/**/*.py' = ['S101']
+
+[tool.ruff.lint.isort]
+known-first-party = ['google_workspace_mcp']
+
+[tool.ruff.format]
+quote-style = 'single'
+docstring-code-format = true
+
+[tool.mypy]
+python_version = '3.14'
+disallow_untyped_defs = true
+
+[tool.pyright]
+typeCheckingMode = 'basic'
+reportMissingTypeStubs = false
+# свой exclude ЗАМЕЩАЕТ умолчания pyright целиком, а среди них был
+# шаблон, державший .venv вне обхода
+exclude = [
+    '**/.venv/**',
+    '**/__pycache__/**',
+    '**/node_modules/**',
+]
