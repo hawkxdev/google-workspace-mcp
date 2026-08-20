@@ -2,7 +2,7 @@
 
 A project for building five independent remote MCP servers for Google Workspace: Gmail, Google Calendar, Google Drive, Google Sheets, and Google Docs.
 
-> **Status: pre-alpha.** The MCP servers are not operational yet. The repository currently contains the package scaffold, five placeholder entry points, and the downstream OAuth state core.
+> **Status: pre-alpha.** The MCP servers are not operational yet. The repository currently contains the package scaffold, five placeholder entry points, the downstream OAuth state core, and immutable per-service configuration.
 
 ## Current status
 
@@ -13,7 +13,8 @@ Implemented:
 - OAuth client registration and PKCE;
 - token binding to a canonical `resource`;
 - refresh token rotation, replay detection, and family revocation;
-- immutable state ownership metadata for the service and resource.
+- immutable state ownership metadata for the service and resource;
+- immutable per-service configuration with strict port and token TTL validation.
 
 All five console entry points are placeholders and exit with a message that the service is not built. The HTTP/MCP transport, Google API integration, service tools, and deployment configuration are not implemented yet.
 
@@ -83,6 +84,7 @@ The `--no-sync` flag is required when checking the installed dependency version.
 | Path | Purpose |
 |---|---|
 | `src/google_workspace_mcp/auth/state.py` | downstream OAuth state lifecycle |
+| `src/google_workspace_mcp/common/config.py` | immutable per-service environment configuration |
 | `src/google_workspace_mcp/cli/` | five placeholder entry points |
 | `tests/core/` | OAuth core and package entry point regressions |
 | `pyproject.toml` | package metadata, dependencies, and tool configuration |
