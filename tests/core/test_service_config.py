@@ -135,12 +135,46 @@ class TestValidConfiguration:
         assert config.forwarded_allow_ips == ('127.0.0.1', '10.1.1.1')
         assert config.approved_legacy_client_ids == frozenset({'x', 'y'})
 
+    def test_empty_forwarded_allow_ips_disables_trust(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv('GMAIL_MCP_FORWARDED_ALLOW_IPS', '')
+
+        assert ServiceConfig.from_env('gmail').forwarded_allow_ips == ()
+
     def test_state_and_token_paths_are_distinct_per_service(self) -> None:
         configs = [
             ServiceConfig.from_env(service) for service in SERVICES_AND_PORTS
         ]
         assert len({config.oauth_state_path for config in configs}) == 5
         assert len({config.google_token_path for config in configs}) == 5
+
+    @pytest.mark.parametrize(
+        'state_suffix, token_suffix',
+        [
+            ('shared', 'shared'),
+            ('nested/../shared', 'shared'),
+        ],
+    )
+    def test_state_and_token_paths_must_differ(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        state_suffix: str,
+        token_suffix: str,
+    ) -> None:
+        monkeypatch.setenv(
+            'GMAIL_OAUTH_STATE_PATH', str(tmp_path / state_suffix)
+        )
+        monkeypatch.setenv(
+            'GMAIL_GOOGLE_TOKEN_PATH', str(tmp_path / token_suffix)
+        )
+
+        with pytest.raises(
+            ValueError,
+            match='GMAIL_OAUTH_STATE_PATH.*GMAIL_GOOGLE_TOKEN_PATH',
+        ):
+            ServiceConfig.from_env('gmail')
 
 
 # === Invalid configuration cases ===
@@ -150,6 +184,28 @@ class TestInvalidConfiguration:
     def test_unsupported_service_is_rejected(self) -> None:
         with pytest.raises(ValueError, match='unsupported service'):
             ServiceConfig.from_env('photos')
+
+    @pytest.mark.parametrize(
+        'variable',
+        [
+            'MCP_HOST',
+            'MCP_PUBLIC_URL',
+            'MCP_PATH',
+            'OAUTH_STATE_PATH',
+            'GOOGLE_TOKEN_PATH',
+        ],
+    )
+    @pytest.mark.parametrize('value', ['', '   '])
+    def test_empty_required_values_are_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        variable: str,
+        value: str,
+    ) -> None:
+        monkeypatch.setenv(f'GMAIL_{variable}', value)
+
+        with pytest.raises(ValueError, match=f'GMAIL_{variable}'):
+            ServiceConfig.from_env('gmail')
 
     @pytest.mark.parametrize(
         'variable',
@@ -211,6 +267,14 @@ class TestBoundaryConfiguration:
         assert getattr(ServiceConfig.from_env('sheets'), attribute) == minimum
         monkeypatch.setenv(f'SHEETS_{env_suffix}', str(maximum))
         assert getattr(ServiceConfig.from_env('sheets'), attribute) == maximum
+
+    @pytest.mark.parametrize('value', [1, 65535])
+    def test_port_bounds_are_inclusive(
+        self, monkeypatch: pytest.MonkeyPatch, value: int
+    ) -> None:
+        monkeypatch.setenv('GMAIL_MCP_PORT', str(value))
+
+        assert ServiceConfig.from_env('gmail').port == value
 
     @pytest.mark.parametrize('value', ['0', '2592001', '-1', 'nan', 'inf'])
     def test_access_ttl_outside_bounds_is_rejected(

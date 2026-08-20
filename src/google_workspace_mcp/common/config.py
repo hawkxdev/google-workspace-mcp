@@ -46,12 +46,23 @@ def _path(value: str | None) -> Path | None:
     return Path(value.strip()).expanduser()
 
 
+def _required_string(env: Mapping[str, str], key: str, default: str) -> str:
+    """Resolve a required value."""
+    value = env.get(key, default).strip()
+    if not value:
+        raise ValueError(f'{key} must not be empty')
+    return value
+
+
 def _required_path(env: Mapping[str, str], key: str, default: Path) -> Path:
     """Resolve a required path."""
     value = env.get(key)
     if value is None:
         return default
-    return Path(value.strip()).expanduser()
+    value = value.strip()
+    if not value:
+        raise ValueError(f'{key} must not be empty')
+    return Path(value).expanduser()
 
 
 def _integer(
@@ -100,14 +111,25 @@ class ServiceConfig:
         port = _integer(
             env, f'{prefix}_MCP_PORT', _default_port(service), 1, 65535
         )
-        host = env.get(f'{prefix}_MCP_HOST', '127.0.0.1').strip()
-        public_url = (
-            env.get(f'{prefix}_MCP_PUBLIC_URL', f'http://127.0.0.1:{port}')
-            .strip()
-            .rstrip('/')
-        )
-        mcp_path = env.get(f'{prefix}_MCP_PATH', f'/{service}/mcp').strip()
+        host_key = f'{prefix}_MCP_HOST'
+        public_url_key = f'{prefix}_MCP_PUBLIC_URL'
+        mcp_path_key = f'{prefix}_MCP_PATH'
+        host = _required_string(env, host_key, '127.0.0.1')
+        public_url = _required_string(
+            env, public_url_key, f'http://127.0.0.1:{port}'
+        ).rstrip('/')
+        mcp_path = _required_string(env, mcp_path_key, f'/{service}/mcp')
         state_dir = (_STATE_ROOT / service).expanduser()
+        state_key = f'{prefix}_OAUTH_STATE_PATH'
+        token_key = f'{prefix}_GOOGLE_TOKEN_PATH'
+        state_path = _required_path(
+            env, state_key, state_dir / 'oauth_state.sqlite3'
+        )
+        token_path = _required_path(
+            env, token_key, state_dir / 'google_token.json'
+        )
+        if os.path.abspath(state_path) == os.path.abspath(token_path):
+            raise ValueError(f'{state_key} and {token_key} must differ')
         # 2. Parse OAuth settings
         approved = frozenset(
             _csv(env.get(f'{prefix}_OAUTH_APPROVED_LEGACY_CLIENT_IDS'))
@@ -119,16 +141,8 @@ class ServiceConfig:
             mcp_path=mcp_path,
             host=host,
             port=port,
-            oauth_state_path=_required_path(
-                env,
-                f'{prefix}_OAUTH_STATE_PATH',
-                state_dir / 'oauth_state.sqlite3',
-            ),
-            google_token_path=_required_path(
-                env,
-                f'{prefix}_GOOGLE_TOKEN_PATH',
-                state_dir / 'google_token.json',
-            ),
+            oauth_state_path=state_path,
+            google_token_path=token_path,
             allowed_hosts=_csv(env.get(f'{prefix}_MCP_ALLOWED_HOSTS')),
             forwarded_allow_ips=(
                 _csv(env.get(f'{prefix}_MCP_FORWARDED_ALLOW_IPS'))
