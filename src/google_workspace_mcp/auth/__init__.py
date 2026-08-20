@@ -1,4 +1,4 @@
-"""Client-to-service authorization layer."""
+"""Service authorization support."""
 
 from .state import (
     LEGACY_FULL,

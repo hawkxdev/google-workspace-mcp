@@ -1,4 +1,4 @@
-"""Persistent OAuth credential lifecycle contracts."""
+"""OAuth lifecycle tests."""
 
 from __future__ import annotations
 
@@ -43,9 +43,12 @@ CHALLENGE = (
     .decode()
 )
 
+# === Shared OAuth fixtures ===
+
 
 @pytest.fixture
 def state_paths(tmp_path: Path) -> tuple[Path, Path, Path]:
+    """Create isolated OAuth paths."""
     downloads = tmp_path / 'downloads'
     downloads.mkdir(mode=0o700)
     state_path = tmp_path / 'state' / 'oauth_state.sqlite3'
@@ -60,6 +63,7 @@ def _state(
     approved: frozenset[str] = frozenset(),
     static_secret: str = STATIC_SECRET,
 ) -> OAuthState:
+    """Build configured OAuth state."""
     downloads, state_path, legacy_path = state_paths
     clock = (lambda: now[0]) if now is not None else None
     state = OAuthState(
@@ -82,18 +86,21 @@ def _state(
 
 
 def secrets_equal(left: str, right: str) -> bool:
-    """Keep static-secret expectations independent of production helpers."""
+    """Compare secrets independently."""
     import hmac
 
     return hmac.compare_digest(left, right)
 
 
+# === OAuth test helpers ===
 def _register(state: OAuthState) -> tuple[str, str]:
+    """Register test client."""
     issued = state.register_client([REDIRECT])
     return issued.client.client_id, issued.client_secret
 
 
 def _issue_code(state: OAuthState, client_id: str) -> str:
+    """Issue authorization code."""
     return state.issue_authorization_code(
         client_id=client_id,
         redirect_uri=REDIRECT,
@@ -108,6 +115,7 @@ def _redeem(
     client_id: str,
     client_secret: str,
 ):
+    """Redeem authorization code."""
     return state.redeem_authorization_code(
         code=code,
         client_id=client_id,
@@ -119,12 +127,14 @@ def _redeem(
 
 
 def _write_legacy(path: Path, records: dict[str, dict]) -> None:
+    """Write legacy records."""
     path.parent.mkdir(mode=0o700, exist_ok=True)
     path.write_text(json.dumps(records))
     path.chmod(0o600)
 
 
 def _db_text(path: Path) -> str:
+    """Read database sidecars."""
     chunks = [path.read_bytes()]
     for suffix in ('-wal', '-shm'):
         sidecar = Path(f'{path}{suffix}')
@@ -133,8 +143,8 @@ def _db_text(path: Path) -> str:
     return b''.join(chunks).decode('utf-8', errors='ignore')
 
 
+# === OAuth lifecycle cases ===
 def test_readonly_policy_exposes_exactly_the_injected_capability_set():
-    """Use the exact capability set injected for the service."""
     assert _capabilities_for_policy(MCP_READONLY_V1, READONLY) == READONLY
     assert _capabilities_for_policy(LEGACY_FULL, READONLY) == ()
 
@@ -172,6 +182,7 @@ def test_simultaneous_initialization_is_idempotent(state_paths, monkeypatch):
     original_unlink = Path.unlink
 
     def slow_legacy_unlink(path: Path, *args, **kwargs):
+        """Delay legacy cleanup."""
         if path == legacy_path:
             time.sleep(0.05)
         return original_unlink(path, *args, **kwargs)
@@ -180,6 +191,7 @@ def test_simultaneous_initialization_is_idempotent(state_paths, monkeypatch):
     barrier = threading.Barrier(2)
 
     def open_once():
+        """Open state concurrently."""
         barrier.wait()
         state = _state(state_paths)
         try:
@@ -371,6 +383,7 @@ def test_simultaneous_redemption_issues_exactly_one_token(state_paths):
     barrier = threading.Barrier(2)
 
     def redeem_once():
+        """Redeem code concurrently."""
         local = _state(state_paths)
         barrier.wait()
         try:
@@ -394,6 +407,7 @@ def test_revoke_racing_redemption_cannot_leave_active_token(state_paths):
     barrier = threading.Barrier(2)
 
     def redeem_once():
+        """Redeem code concurrently."""
         local = _state(state_paths)
         barrier.wait()
         try:
@@ -404,6 +418,7 @@ def test_revoke_racing_redemption_cannot_leave_active_token(state_paths):
             local.close()
 
     def revoke_once():
+        """Revoke client concurrently."""
         local = _state(state_paths)
         barrier.wait()
         try:
@@ -448,6 +463,7 @@ def test_client_revoke_cascades_codes_and_tokens_across_reopen(state_paths):
     reopened.close()
 
 
+# === Legacy migration cases ===
 def test_legacy_migration_is_allowlisted_one_way_and_secret_free(state_paths):
     _, state_path, legacy_path = state_paths
     records = {
@@ -633,6 +649,7 @@ def test_unlink_failure_blocks_startup_then_retries_without_reimport(
     original_unlink = Path.unlink
 
     def fail_legacy_unlink(path: Path, *args, **kwargs):
+        """Simulate cleanup failure."""
         if path == legacy_path:
             raise OSError('synthetic unlink failure')
         return original_unlink(path, *args, **kwargs)
@@ -661,6 +678,7 @@ def test_migration_cleanup_accepts_source_removed_by_concurrent_initializer(
     original_unlink = Path.unlink
 
     def concurrent_unlink(path: Path, *args, **kwargs):
+        """Simulate concurrent cleanup."""
         if path == legacy_path:
             original_unlink(path, *args, **kwargs)
             raise FileNotFoundError(path)
@@ -684,6 +702,7 @@ def test_migration_unlink_is_durable_before_cleanup_marker_clears(
     original_fsync = os.fsync
 
     def fail_directory_fsync(file_descriptor: int):
+        """Simulate directory sync failure."""
         metadata = os.fstat(file_descriptor)
         if stat.S_ISDIR(metadata.st_mode):
             raise OSError('synthetic directory fsync failure')
@@ -715,6 +734,7 @@ def test_migration_unlink_is_durable_before_cleanup_marker_clears(
     reopened.close()
 
 
+# === Backup and security cases ===
 def test_static_client_revoke_survives_restart(state_paths):
     state = _state(state_paths)
     client = state.ensure_static_client(

@@ -1,4 +1,4 @@
-"""Transactional, secret-free-at-rest OAuth lifecycle state."""
+"""Manage OAuth state."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+# === OAuth configuration constants ===
 SCHEMA_VERSION = 2
 AUTHORIZATION_CODE_TTL_SECONDS = 300
 MAX_ACCESS_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
@@ -28,6 +29,7 @@ LEGACY_FULL = 'legacy_full'
 REAUTHORIZATION_REQUIRED = 'reauthorization_required'
 
 
+# === Database schema definition ===
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS clients (
     client_id TEXT PRIMARY KEY,
@@ -104,16 +106,9 @@ CREATE TABLE IF NOT EXISTS migration_metadata (
 """
 
 
+# === Resource helper functions ===
 def canonicalize_resource(value: str) -> str:
-    """Collapse the RFC 3986 empty-path/root-path equivalence, nothing more.
-
-    ``https://host/`` and ``https://host`` are one resource (an authority
-    with an empty path). Interoperability requires accepting both: pydantic
-    v2 URL types append the root slash, so a client legitimately alternates
-    forms between cold start and PRM-backed flows. Any real path suffix
-    (``/mcp``) or a doubled slash is a DIFFERENT resource and passes
-    through unchanged, so the strict comparison still rejects it.
-    """
+    """Canonicalize resource URL."""
     if value.endswith('/') and not value.endswith('//'):
         head = value[:-1]
         separator = head.find('://')
@@ -122,32 +117,36 @@ def canonicalize_resource(value: str) -> str:
     return value
 
 
+# === OAuth state errors ===
 class OAuthStateError(RuntimeError):
-    """Base class for OAuth state errors safe to map to protocol failures."""
+    """Base OAuth state error."""
 
 
 class UnsafeStatePath(OAuthStateError):
-    """A state, migration, or backup path violates local security rules."""
+    """Unsafe state path error."""
 
 
 class InvalidClient(OAuthStateError):
-    """Client authentication or client state is invalid."""
+    """Invalid client error."""
 
 
 class InvalidGrant(OAuthStateError):
-    """Authorization-code state is invalid."""
+    """Invalid grant error."""
 
 
 class _RefreshReplay(Exception):
-    """Internal signal: a consumed refresh was presented again."""
+    """Refresh replay signal."""
 
 
 class InvalidTarget(OAuthStateError):
-    """The resource target differs from the authorized resource."""
+    """Invalid resource target."""
 
 
+# === OAuth state records ===
 @dataclass(frozen=True)
 class ClientMetadata:
+    """Registered client metadata."""
+
     client_id: str
     redirect_uris: tuple[str, ...]
     policy: str
@@ -161,12 +160,16 @@ class ClientMetadata:
 
 @dataclass(frozen=True)
 class RegisteredClient:
+    """Registered client credentials."""
+
     client: ClientMetadata
     client_secret: str
 
 
 @dataclass(frozen=True)
 class TokenMetadata:
+    """Issued access metadata."""
+
     token_id: str
     client_id: str
     policy: str
@@ -179,6 +182,8 @@ class TokenMetadata:
 
 @dataclass(frozen=True)
 class RefreshTokenMetadata:
+    """Refresh credential metadata."""
+
     refresh_id: str
     family_id: str
     client_id: str
@@ -194,6 +199,8 @@ class RefreshTokenMetadata:
 
 @dataclass(frozen=True)
 class IssuedAccessToken:
+    """Issued access credentials."""
+
     access_token: str
     token: TokenMetadata
     refresh_token: str | None = None
@@ -202,6 +209,8 @@ class IssuedAccessToken:
 
 @dataclass(frozen=True)
 class MigrationRecord:
+    """Legacy migration record."""
+
     client_id: str
     client_secret: str
     redirect_uris: tuple[str, ...]
@@ -209,8 +218,9 @@ class MigrationRecord:
     created_at: float
 
 
+# === OAuth state implementation ===
 class OAuthState:
-    """SQLite-backed OAuth state with atomic lifecycle transitions."""
+    """Persistent OAuth state."""
 
     def __init__(
         self,
@@ -227,6 +237,8 @@ class OAuthState:
         clock: Callable[[], float] | None = None,
         static_client_authenticator: Callable[[str, str], bool] | None = None,
     ) -> None:
+        """Configure OAuth state."""
+        # 1. Validate token lifetimes
         if not 1 <= access_token_ttl_seconds <= MAX_ACCESS_TOKEN_TTL_SECONDS:
             raise ValueError(
                 'access_token_ttl_seconds must be between 1 and 2592000'
@@ -235,6 +247,7 @@ class OAuthState:
             raise ValueError(
                 'refresh_token_ttl_seconds must be between 1 and 7776000'
             )
+        # 2. Normalize state settings
         self.path = Path(path).expanduser().absolute()
         self.download_path = Path(download_path).expanduser().absolute()
         self.service_id = service_id
@@ -253,6 +266,7 @@ class OAuthState:
         self._lock = threading.RLock()
         self._closed = False
 
+        # 3. Open state database
         self._assert_outside_downloads(self.path)
         self._prepare_secure_directory(self.path.parent)
         self._validate_state_targets()
@@ -264,6 +278,7 @@ class OAuthState:
             check_same_thread=False,
         )
         self._connection.row_factory = sqlite3.Row
+        # 4. Initialize state schema
         try:
             self._configure_connection()
             self._initialize_schema()
@@ -275,17 +290,19 @@ class OAuthState:
             raise
 
     def migrate_legacy(self) -> None:
-        """Import and remove the configured legacy JSON source exactly once."""
+        """Migrate legacy client data."""
         self._migrate_legacy_once()
 
     @property
     def schema_version(self) -> int:
+        """Read schema version."""
         with self._lock:
             return int(
                 self._connection.execute('PRAGMA user_version').fetchone()[0]
             )
 
     def table_names(self) -> set[str]:
+        """List database tables."""
         with self._lock:
             rows = self._connection.execute(
                 'SELECT name FROM sqlite_master '
@@ -294,15 +311,18 @@ class OAuthState:
         return {str(row[0]) for row in rows}
 
     def close(self) -> None:
+        """Close database state."""
         with self._lock:
             if not self._closed:
                 self._connection.close()
                 self._closed = True
 
     def __enter__(self) -> OAuthState:
+        """Enter state context."""
         return self
 
     def __exit__(self, *exc_info: object) -> None:
+        """Exit state context."""
         self.close()
 
     def register_client(
@@ -311,6 +331,7 @@ class OAuthState:
         *,
         client_name: str = 'Google Workspace MCP Client',
     ) -> RegisteredClient:
+        """Register dynamic client."""
         redirects = self._normalize_redirects(redirect_uris)
         now = self._clock()
         with self._transaction() as connection:
@@ -352,6 +373,7 @@ class OAuthState:
         capabilities: Sequence[str],
         client_name: str = 'Google Workspace MCP Static Client',
     ) -> ClientMetadata:
+        """Ensure static client."""
         del capabilities
         if not client_id:
             raise ValueError('static client_id must not be empty')
@@ -398,6 +420,7 @@ class OAuthState:
         return client
 
     def get_client(self, client_id: str) -> ClientMetadata | None:
+        """Load client metadata."""
         with self._lock:
             row = self._connection.execute(
                 'SELECT * FROM clients WHERE client_id = ?', (client_id,)
@@ -408,6 +431,7 @@ class OAuthState:
         return _client_from_row(row, redirects, self._readonly_capabilities)
 
     def list_clients(self) -> tuple[ClientMetadata, ...]:
+        """List registered clients."""
         with self._lock:
             rows = self._connection.execute(
                 'SELECT * FROM clients ORDER BY created_at, client_id'
@@ -422,6 +446,7 @@ class OAuthState:
             )
 
     def verify_client_secret(self, client_id: str, client_secret: str) -> bool:
+        """Verify client secret."""
         if not client_secret:
             return False
         with self._lock:
@@ -447,6 +472,7 @@ class OAuthState:
         )
 
     def client_redirect_uri_allowed(self, client_id: str, uri: str) -> bool:
+        """Check redirect URI."""
         with self._lock:
             row = self._connection.execute(
                 'SELECT 1 FROM clients AS c '
@@ -458,6 +484,7 @@ class OAuthState:
         return row is not None
 
     def can_issue_authorization_code(self, client_id: str) -> bool:
+        """Check authorization eligibility."""
         client = self.get_client(client_id)
         return bool(
             client is not None
@@ -474,12 +501,15 @@ class OAuthState:
         resource: str,
         fresh_reauthorization: bool = False,
     ) -> str:
+        """Issue authorization code."""
+        # 1. Validate authorization request
         if not code_challenge:
             raise InvalidGrant('missing PKCE challenge')
         resource = canonicalize_resource(resource)
         now = self._clock()
         code = secrets.token_urlsafe(32)
         with self._transaction() as connection:
+            # 2. Load client policy
             client = connection.execute(
                 'SELECT policy, revoked_at FROM clients WHERE client_id = ?',
                 (client_id,),
@@ -508,6 +538,7 @@ class OAuthState:
             ).fetchone()
             if allowed is None:
                 raise InvalidGrant('redirect URI is not registered')
+            # 3. Persist authorization code
             connection.execute(
                 'INSERT INTO authorization_codes '
                 '(code_verifier, client_id, redirect_uri, code_challenge, '
@@ -528,6 +559,7 @@ class OAuthState:
         return code
 
     def authorization_code_active(self, code: str) -> bool:
+        """Check active authorization code."""
         now = self._clock()
         with self._lock:
             row = self._connection.execute(
@@ -552,12 +584,15 @@ class OAuthState:
         code_verifier: str,
         resource: str,
     ) -> IssuedAccessToken:
+        """Redeem authorization code."""
         resource = canonicalize_resource(resource)
         now = self._clock()
         with self._transaction() as connection:
+            # 1. Authenticate client credentials
             self._authenticate_client_in_transaction(
                 connection, client_id, client_secret
             )
+            # 2. Validate authorization code
             row = connection.execute(
                 'SELECT * FROM authorization_codes WHERE code_verifier = ?',
                 (_secret_verifier('authorization-code', code),),
@@ -584,6 +619,7 @@ class OAuthState:
             ):
                 raise InvalidGrant('PKCE verification failed')
 
+            # 3. Issue token pair
             capabilities = tuple(json.loads(row['capabilities_json']))
             issued = self._insert_access_token(
                 connection,
@@ -628,6 +664,7 @@ class OAuthState:
         client_id: str,
         resource: str,
     ) -> IssuedAccessToken:
+        """Issue access token."""
         resource = canonicalize_resource(resource)
         now = self._clock()
         with self._transaction() as connection:
@@ -660,7 +697,8 @@ class OAuthState:
         client_id: str,
         resource: str,
     ) -> IssuedAccessToken:
-        """Rotate one refresh credential into a fresh access/refresh pair."""
+        """Redeem refresh token."""
+        # 1. Parse refresh token
         resource = canonicalize_resource(resource)
         parsed = _parse_refresh_token(refresh_token)
         if parsed is None:
@@ -670,6 +708,7 @@ class OAuthState:
         replayed_family: str | None = None
         try:
             with self._transaction() as connection:
+                # 2. Validate stored credential
                 row = connection.execute(
                     'SELECT r.*, c.revoked_at AS client_revoked_at, '
                     'c.policy AS client_policy FROM refresh_tokens AS r '
@@ -684,9 +723,7 @@ class OAuthState:
                 if row['client_id'] != client_id:
                     raise InvalidGrant('refresh token client mismatch')
                 if row['consumed_at'] is not None:
-                    # Reuse of a rotated credential means it leaked. Revoking
-                    # the whole family happens outside this transaction: a
-                    # raise here would roll the revocation back.
+                    # === Refresh replay handling ===
                     replayed_family = str(row['family_id'])
                     raise _RefreshReplay
                 if row['revoked_at'] is not None:
@@ -705,12 +742,11 @@ class OAuthState:
                         'unknown, revoked, or unauthorized client'
                     )
                 if str(row['client_policy']) != policy:
-                    # The operator moved the client's policy after issuance.
-                    # Carrying stale capabilities forward would let a refresh
-                    # outlive the decision that narrowed them.
+                    # === OAuth policy validation ===
                     raise InvalidGrant(
                         'client policy changed since authorization'
                     )
+                # 3. Rotate token pair
                 capabilities = tuple(json.loads(row['capabilities_json']))
                 issued = self._insert_access_token(
                     connection,
@@ -744,6 +780,7 @@ class OAuthState:
                     refresh_token=raw_refresh,
                     refresh=refresh_metadata,
                 )
+        # 4. Revoke replay family
         except _RefreshReplay:
             pass
         with self._transaction() as connection:
@@ -751,7 +788,7 @@ class OAuthState:
         raise InvalidGrant('refresh token was already used')
 
     def list_refresh_tokens(self) -> tuple[RefreshTokenMetadata, ...]:
-        """Return refresh metadata only; raw secrets are never stored."""
+        """List refresh credentials."""
         with self._lock:
             rows = self._connection.execute(
                 'SELECT * FROM refresh_tokens ORDER BY issued_at, refresh_id'
@@ -759,7 +796,7 @@ class OAuthState:
         return tuple(_refresh_from_row(row) for row in rows)
 
     def revoke_refresh_token(self, refresh_id: str) -> bool:
-        """Revoke one refresh credential without touching its access token."""
+        """Revoke refresh credential."""
         now = self._clock()
         with self._transaction() as connection:
             result = connection.execute(
@@ -770,6 +807,7 @@ class OAuthState:
         return result.rowcount == 1
 
     def lookup_access_token(self, access_token: str) -> TokenMetadata | None:
+        """Lookup access token."""
         parsed = _parse_access_token(access_token)
         if parsed is None:
             return None
@@ -803,6 +841,7 @@ class OAuthState:
         *,
         include_inactive: bool = True,
     ) -> tuple[TokenMetadata, ...]:
+        """List access tokens."""
         now = self._clock()
         with self._lock:
             rows = self._connection.execute(
@@ -829,6 +868,7 @@ class OAuthState:
         return tuple(tokens)
 
     def revoke_token(self, token_id: str) -> bool:
+        """Revoke access token."""
         now = self._clock()
         with self._transaction() as connection:
             result = connection.execute(
@@ -839,6 +879,7 @@ class OAuthState:
         return result.rowcount == 1
 
     def revoke_client(self, client_id: str) -> bool:
+        """Revoke client credentials."""
         now = self._clock()
         with self._transaction() as connection:
             result = connection.execute(
@@ -867,6 +908,8 @@ class OAuthState:
         return True
 
     def backup(self, destination: str | Path) -> Path:
+        """Create state backup."""
+        # 1. Validate backup target
         target = Path(destination).expanduser().absolute()
         live_paths = {
             self.path,
@@ -893,6 +936,7 @@ class OAuthState:
             raise UnsafeStatePath(
                 f'backup destination sidecar already exists: {sidecar}'
             )
+        # 2. Prepare temporary file
         temporary = target.with_name(
             f'.{target.name}.backup-{os.getpid()}-{secrets.token_hex(6)}'
         )
@@ -903,6 +947,7 @@ class OAuthState:
             with self._lock:
                 self._connection.backup(backup_connection)
             backup_connection.commit()
+            # 3. Publish backup file
             backup_connection.close()
             backup_connection = None
             os.chmod(temporary, 0o600, follow_symlinks=False)
@@ -913,12 +958,14 @@ class OAuthState:
             self._fsync_directory(target.parent)
             return target
         finally:
+            # 4. Cleanup temporary file
             if backup_connection is not None:
                 backup_connection.close()
             with contextlib.suppress(FileNotFoundError):
                 temporary.unlink()
 
     def _configure_connection(self) -> None:
+        """Configure database connection."""
         self._connection.execute('PRAGMA foreign_keys = ON')
         self._connection.execute('PRAGMA busy_timeout = 30000')
         self._connection.execute('PRAGMA synchronous = FULL')
@@ -936,12 +983,14 @@ class OAuthState:
                     or time.monotonic() >= deadline
                 ):
                     raise
-                # SQLite's busy handler does not cover every journal-mode race.
+                # === WAL retry handling ===
                 time.sleep(0.01)
         if str(mode).lower() != 'wal':
             raise OAuthStateError('SQLite could not enable WAL mode')
 
     def _migrate_legacy_once(self) -> None:
+        """Perform one legacy migration."""
+        # 1. Load migration state
         migration_name = 'legacy_clients_json_v1'
         source_bytes: bytes | None = None
         source_digest = ''
@@ -985,6 +1034,7 @@ class OAuthState:
                     raise ValueError(
                         f'approved legacy client IDs absent from source: {joined}'
                     )
+                # 2. Import legacy clients
                 for record in records:
                     policy = (
                         LEGACY_FULL
@@ -1024,6 +1074,7 @@ class OAuthState:
                 )
                 cleanup_pending = True
 
+        # 3. Finalize source cleanup
         if not cleanup_pending:
             return
         legacy_path = self.legacy_path
@@ -1062,7 +1113,10 @@ class OAuthState:
     def _parse_legacy_records(
         self, source_bytes: bytes
     ) -> tuple[MigrationRecord, ...]:
+        """Parse legacy client records."""
+
         def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+            """Reject duplicate fields."""
             result: dict[str, Any] = {}
             for key, value in pairs:
                 if key in result:
@@ -1072,6 +1126,7 @@ class OAuthState:
                 result[key] = value
             return result
 
+        # Decode legacy source
         try:
             payload = json.loads(
                 source_bytes.decode('utf-8'),
@@ -1082,6 +1137,7 @@ class OAuthState:
         if not isinstance(payload, dict):
             raise ValueError('legacy OAuth source must contain an object')
 
+        # Validate legacy records
         records: list[MigrationRecord] = []
         for client_id, raw in payload.items():
             if not isinstance(client_id, str) or not client_id:
@@ -1138,6 +1194,7 @@ class OAuthState:
         client_id: str,
         client_secret: str,
     ) -> None:
+        """Authenticate client transactionally."""
         row = connection.execute(
             'SELECT secret_verifier, is_static, revoked_at FROM clients '
             'WHERE client_id = ?',
@@ -1173,7 +1230,10 @@ class OAuthState:
         resource: str,
         now: float,
     ) -> IssuedAccessToken:
+        """Insert access token."""
+        # 1. Normalize capabilities
         normalized_capabilities = _normalize_capabilities(capabilities)
+        # 2. Allocate token identity
         while True:
             token_id = secrets.token_urlsafe(18)
             exists = connection.execute(
@@ -1183,6 +1243,7 @@ class OAuthState:
                 break
         token_secret = secrets.token_urlsafe(32)
         expires_at = now + self.access_token_ttl_seconds
+        # 3. Persist token record
         connection.execute(
             'INSERT INTO access_tokens '
             '(token_id, secret_verifier, client_id, policy, resource, '
@@ -1202,6 +1263,7 @@ class OAuthState:
             'VALUES (?, ?)',
             ((token_id, capability) for capability in normalized_capabilities),
         )
+        # 4. Build token metadata
         token = TokenMetadata(
             token_id=token_id,
             client_id=client_id,
@@ -1228,7 +1290,10 @@ class OAuthState:
         resource: str,
         now: float,
     ) -> tuple[str, RefreshTokenMetadata]:
+        """Insert refresh token."""
+        # 1. Normalize capabilities
         normalized_capabilities = _normalize_capabilities(capabilities)
+        # 2. Allocate token identity
         while True:
             refresh_id = secrets.token_urlsafe(18)
             exists = connection.execute(
@@ -1239,6 +1304,7 @@ class OAuthState:
                 break
         refresh_secret = secrets.token_urlsafe(32)
         expires_at = now + self.refresh_token_ttl_seconds
+        # 3. Persist token record
         connection.execute(
             'INSERT INTO refresh_tokens '
             '(refresh_id, secret_verifier, family_id, client_id, '
@@ -1257,6 +1323,7 @@ class OAuthState:
                 expires_at,
             ),
         )
+        # 4. Build token metadata
         metadata = RefreshTokenMetadata(
             refresh_id=refresh_id,
             family_id=family_id,
@@ -1278,7 +1345,7 @@ class OAuthState:
         family_id: str,
         now: float,
     ) -> None:
-        """Kill every credential descended from one compromised rotation."""
+        """Revoke refresh token family."""
         connection.execute(
             'UPDATE access_tokens SET revoked_at = ? WHERE revoked_at IS NULL '
             'AND token_id IN (SELECT access_token_id FROM refresh_tokens '
@@ -1293,6 +1360,7 @@ class OAuthState:
 
     @contextlib.contextmanager
     def _transaction(self) -> Iterator[sqlite3.Connection]:
+        """Open database transaction."""
         with self._lock:
             self._connection.execute('BEGIN IMMEDIATE')
             try:
@@ -1304,13 +1372,12 @@ class OAuthState:
                 self._connection.commit()
 
     def _initialize_schema(self) -> None:
+        """Prepare database schema."""
         with self._lock:
             version = int(
                 self._connection.execute('PRAGMA user_version').fetchone()[0]
             )
-            # Older versions upgrade in place: every statement in _SCHEMA is
-            # additive and idempotent. A NEWER version is refused, because this
-            # process cannot know what a future schema removed or narrowed.
+            # === Schema upgrade handling ===
             if version > SCHEMA_VERSION:
                 raise OAuthStateError(
                     f'unsupported OAuth state schema version {version}'
@@ -1330,6 +1397,7 @@ class OAuthState:
     def _redirects_for(
         self, connection: sqlite3.Connection, client_id: str
     ) -> tuple[str, ...]:
+        """Load client redirects."""
         rows = connection.execute(
             'SELECT redirect_uri FROM client_redirect_uris '
             'WHERE client_id = ? ORDER BY redirect_uri',
@@ -1340,6 +1408,7 @@ class OAuthState:
     def _token_capabilities(
         self, connection: sqlite3.Connection, token_id: str
     ) -> tuple[str, ...]:
+        """Load token capabilities."""
         rows = connection.execute(
             'SELECT capability FROM access_token_capabilities '
             'WHERE token_id = ? ORDER BY capability',
@@ -1348,6 +1417,7 @@ class OAuthState:
         return tuple(str(row[0]) for row in rows)
 
     def _validate_state_targets(self) -> None:
+        """Validate state paths."""
         self._validate_secure_file(self.path, allow_missing=True)
         for suffix in ('-wal', '-shm'):
             self._validate_secure_file(
@@ -1355,16 +1425,18 @@ class OAuthState:
             )
 
     def _create_database_file(self) -> None:
+        """Create database file."""
         if not os.path.lexists(self.path):
             try:
                 self._create_secure_file(self.path)
             except FileExistsError:
-                # Another process won initialization; validate its result below.
+                # === Concurrent initialization handling ===
                 pass
         self._validate_secure_file(self.path, allow_missing=False)
 
     @staticmethod
     def _fsync_directory(directory: Path) -> None:
+        """Sync directory contents."""
         directory_fd = os.open(directory, os.O_RDONLY)
         try:
             os.fsync(directory_fd)
@@ -1372,6 +1444,7 @@ class OAuthState:
             os.close(directory_fd)
 
     def _secure_state_files(self) -> None:
+        """Secure state files."""
         os.chmod(self.path, 0o600, follow_symlinks=False)
         for suffix in ('-wal', '-shm'):
             sidecar = Path(f'{self.path}{suffix}')
@@ -1380,6 +1453,7 @@ class OAuthState:
                 os.chmod(sidecar, 0o600, follow_symlinks=False)
 
     def _prepare_secure_directory(self, directory: Path) -> None:
+        """Prepare secure directory."""
         directory = directory.absolute()
         if os.path.lexists(directory):
             metadata = directory.lstat()
@@ -1405,6 +1479,7 @@ class OAuthState:
     def _validate_secure_file(
         self, path: Path, *, allow_missing: bool
     ) -> None:
+        """Validate secure file."""
         if not os.path.lexists(path):
             if allow_missing:
                 return
@@ -1419,6 +1494,7 @@ class OAuthState:
     def _validate_owner_and_mode(
         self, metadata: os.stat_result, path: Path, *, is_directory: bool
     ) -> None:
+        """Validate path ownership."""
         if metadata.st_uid != os.getuid():
             raise UnsafeStatePath(f'state path has unsafe owner: {path}')
         mode = stat.S_IMODE(metadata.st_mode)
@@ -1429,7 +1505,7 @@ class OAuthState:
             )
 
     def _assert_state_owner(self) -> None:
-        """Verify the owner because adjacent service paths look alike."""
+        """Verify state ownership."""
         row = self._connection.execute(
             'SELECT service_id, resource FROM state_owner WHERE id = 1'
         ).fetchone()
@@ -1454,6 +1530,7 @@ class OAuthState:
             )
 
     def _assert_outside_downloads(self, path: Path) -> None:
+        """Validate external path."""
         resolved_path = path.resolve(strict=False)
         resolved_downloads = self.download_path.resolve(strict=False)
         try:
@@ -1469,6 +1546,7 @@ class OAuthState:
 
     @staticmethod
     def _create_secure_file(path: Path) -> None:
+        """Create secure file."""
         flags = os.O_CREAT | os.O_EXCL | os.O_RDWR
         if hasattr(os, 'O_NOFOLLOW'):
             flags |= os.O_NOFOLLOW
@@ -1480,6 +1558,7 @@ class OAuthState:
 
     @staticmethod
     def _normalize_redirects(redirect_uris: Sequence[str]) -> tuple[str, ...]:
+        """Normalize redirect URIs."""
         redirects = tuple(dict.fromkeys(redirect_uris))
         if not all(isinstance(uri, str) and uri for uri in redirects):
             raise ValueError('redirect URIs must be non-empty strings')
@@ -1487,6 +1566,7 @@ class OAuthState:
 
     @staticmethod
     def _validate_policy(policy: str) -> None:
+        """Validate OAuth policy."""
         if policy not in {
             MCP_READONLY_V1,
             LEGACY_FULL,
@@ -1496,6 +1576,7 @@ class OAuthState:
 
 
 def _secret_verifier(kind: str, secret: str) -> bytes:
+    """Derive secret verifier."""
     digest = hashlib.sha256()
     digest.update(b'google-workspace-mcp/oauth-state/v1\0')
     digest.update(kind.encode('ascii'))
@@ -1505,6 +1586,7 @@ def _secret_verifier(kind: str, secret: str) -> bytes:
 
 
 def _normalize_capabilities(capabilities: Iterable[str]) -> tuple[str, ...]:
+    """Normalize token capabilities."""
     result = tuple(sorted(set(capabilities)))
     if not all(
         isinstance(capability, str) and capability for capability in result
@@ -1514,6 +1596,7 @@ def _normalize_capabilities(capabilities: Iterable[str]) -> tuple[str, ...]:
 
 
 def _parse_access_token(access_token: str) -> tuple[str, str] | None:
+    """Parse access token."""
     if not isinstance(access_token, str):
         return None
     parts = access_token.split('.')
@@ -1523,7 +1606,7 @@ def _parse_access_token(access_token: str) -> tuple[str, str] | None:
 
 
 def _parse_refresh_token(refresh_token: str) -> tuple[str, str] | None:
-    """Refresh carries its own prefix so it can never be sent as a bearer."""
+    """Parse refresh token."""
     if not isinstance(refresh_token, str):
         return None
     parts = refresh_token.split('.')
@@ -1535,6 +1618,7 @@ def _parse_refresh_token(refresh_token: str) -> tuple[str, str] | None:
 def _capabilities_for_policy(
     policy: str, readonly_capabilities: tuple[str, ...]
 ) -> tuple[str, ...]:
+    """Resolve policy capabilities."""
     if policy == MCP_READONLY_V1:
         return readonly_capabilities
     if policy in {LEGACY_FULL, REAUTHORIZATION_REQUIRED}:
@@ -1547,6 +1631,7 @@ def _client_from_row(
     redirect_uris: tuple[str, ...],
     readonly_capabilities: tuple[str, ...] = (),
 ) -> ClientMetadata:
+    """Build client metadata."""
     return ClientMetadata(
         client_id=str(row['client_id']),
         redirect_uris=redirect_uris,
@@ -1569,6 +1654,7 @@ def _client_from_row(
 
 
 def _refresh_from_row(row: sqlite3.Row) -> RefreshTokenMetadata:
+    """Build refresh metadata."""
     return RefreshTokenMetadata(
         refresh_id=str(row['refresh_id']),
         family_id=str(row['family_id']),
@@ -1597,6 +1683,7 @@ def _refresh_from_row(row: sqlite3.Row) -> RefreshTokenMetadata:
 def _token_from_row(
     row: sqlite3.Row, capabilities: tuple[str, ...]
 ) -> TokenMetadata:
+    """Build token metadata."""
     return TokenMetadata(
         token_id=str(row['token_id']),
         client_id=str(row['client_id']),
