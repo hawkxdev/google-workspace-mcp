@@ -1429,7 +1429,7 @@ class OAuthState:
             )
 
     def _assert_state_owner(self) -> None:
-        """Пять почти одинаковых путей рядом: адресат сверяется, а не угадывается."""
+        """Verify the owner because adjacent service paths look alike."""
         row = self._connection.execute(
             'SELECT service_id, resource FROM state_owner WHERE id = 1'
         ).fetchone()

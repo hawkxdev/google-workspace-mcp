@@ -1,3 +1,3 @@
-"""Приватные MCP-серверы над Google Workspace."""
+"""Google Workspace MCP servers."""
 
 __version__ = '0.1.0'

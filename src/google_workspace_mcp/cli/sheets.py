@@ -1,8 +1,10 @@
-"""Точка входа сервиса Google Sheets."""
+"""Google Sheets service entry point."""
 
 SERVICE_NAME = 'sheets'
 
 
 def main() -> None:
-    """Запустить сервис. Сборка появляется на Стадии 3."""
-    raise SystemExit('sheets: сервис ещё не собран, см. Stage 3 плана HLD')
+    """Start the service. Runtime assembly is added in Stage 3."""
+    raise SystemExit(
+        'sheets: service is not built yet; see Stage 3 of the HLD plan'
+    )

@@ -1,4 +1,4 @@
-"""Контракт импорта точек входа и границы SDK."""
+"""Entry point import contract and SDK compatibility boundary."""
 
 import importlib
 
@@ -19,7 +19,7 @@ def test_entrypoint_module_exposes_callable_main(service: str) -> None:
 
 
 def test_sdk_server_contract_is_present() -> None:
-    """Пин имени, объявленного в зависимостях: mcp 2.x."""
+    """Pin the MCP 2.x server symbol declared by the dependency contract."""
     from mcp.server.mcpserver import MCPServer
     from mcp.server.mcpserver.exceptions import ToolError
 
@@ -28,7 +28,7 @@ def test_sdk_server_contract_is_present() -> None:
 
 
 def test_stdlib_is_not_shadowed_by_service_modules() -> None:
-    """calendar и docs совпадают с именами вне пакета."""
+    """Ensure service modules do not shadow matching standard modules."""
     import calendar as stdlib_calendar
 
     assert hasattr(stdlib_calendar, 'monthrange')

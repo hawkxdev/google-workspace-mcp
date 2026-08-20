@@ -1,4 +1,4 @@
-"""Владелец файла состояния и запрет писать его в каталог загрузок."""
+"""State ownership and download directory exclusion."""
 
 from pathlib import Path
 
@@ -17,7 +17,7 @@ def _open(
     service_id: str = 'gmail',
     resource: str = GMAIL_RESOURCE,
 ) -> OAuthState:
-    """Открыть состояние сервиса с явным владельцем."""
+    """Open service state with an explicit owner."""
     return OAuthState(
         path,
         service_id=service_id,
@@ -29,7 +29,7 @@ def _open(
 def test_state_created_by_one_service_is_refused_to_another(
     tmp_path: Path,
 ) -> None:
-    """Перепутанный путь — валидная база чужого сервиса."""
+    """Treat a swapped path as another service's valid database."""
     state_path = tmp_path / 'state' / 'oauth.sqlite3'
     downloads = tmp_path / 'downloads'
     downloads.mkdir()
@@ -37,8 +37,8 @@ def test_state_created_by_one_service_is_refused_to_another(
     with _open(state_path, downloads) as state:
         state.register_client(['https://client.example/callback'])
 
-    # Различается ТОЛЬКО сервис: одинаковый resource оставляет решение
-    # за проверкой service_id, иначе сработала бы сверка ресурса.
+    # Change only the service. Keeping the resource equal ensures service_id
+    # makes the decision instead of the resource comparison.
     with pytest.raises(UnsafeStatePath) as excinfo:
         _open(state_path, downloads, service_id='drive')
 
@@ -46,7 +46,7 @@ def test_state_created_by_one_service_is_refused_to_another(
 
 
 def test_state_is_refused_when_resource_differs(tmp_path: Path) -> None:
-    """Тот же сервис, другой канонический resource — тоже отказ."""
+    """Reject the same service when its canonical resource differs."""
     state_path = tmp_path / 'state' / 'oauth.sqlite3'
     downloads = tmp_path / 'downloads'
     downloads.mkdir()
@@ -63,7 +63,7 @@ def test_state_is_refused_when_resource_differs(tmp_path: Path) -> None:
 
 
 def test_state_inside_download_directory_is_refused(tmp_path: Path) -> None:
-    """Состояние в каталоге, куда пишут инструменты, запрещено."""
+    """Reject state stored inside the writable download directory."""
     downloads = tmp_path / 'downloads'
     downloads.mkdir()
     state_path = downloads / 'nested' / 'oauth.sqlite3'
@@ -73,7 +73,7 @@ def test_state_inside_download_directory_is_refused(tmp_path: Path) -> None:
 
 
 def test_state_beside_download_directory_is_allowed(tmp_path: Path) -> None:
-    """Соседний каталог с общим префиксом имени запретом не задет."""
+    """Allow a sibling directory that only shares a name prefix."""
     downloads = tmp_path / 'downloads'
     downloads.mkdir()
     state_path = tmp_path / 'downloads-state' / 'oauth.sqlite3'
@@ -85,13 +85,13 @@ def test_state_beside_download_directory_is_allowed(tmp_path: Path) -> None:
 def test_legacy_source_inside_download_directory_is_refused(
     tmp_path: Path,
 ) -> None:
-    """Источник миграции тоже не читается из каталога загрузок."""
+    """Reject legacy migration sources inside the download directory."""
     downloads = tmp_path / 'downloads'
     downloads.mkdir()
     legacy = downloads / 'oauth_clients.json'
     legacy.write_text('{}')
-    # Права делаются безопасными намеренно: иначе отказ придёт из
-    # проверки прав файла, и мутация guard размещения останется незамечённой.
+    # Set secure permissions so file-mode validation cannot hide a missing
+    # download-directory guard.
     downloads.chmod(0o700)
     legacy.chmod(0o600)
     state_path = tmp_path / 'state' / 'oauth.sqlite3'

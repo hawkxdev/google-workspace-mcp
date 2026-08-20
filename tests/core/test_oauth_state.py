@@ -134,7 +134,7 @@ def _db_text(path: Path) -> str:
 
 
 def test_readonly_policy_exposes_exactly_the_injected_capability_set():
-    """Набор принадлежит сервису: у пяти сервисов он разный."""
+    """Use the exact capability set injected for the service."""
     assert _capabilities_for_policy(MCP_READONLY_V1, READONLY) == READONLY
     assert _capabilities_for_policy(LEGACY_FULL, READONLY) == ()
 

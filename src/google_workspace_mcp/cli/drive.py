@@ -1,8 +1,10 @@
-"""Точка входа сервиса Google Drive."""
+"""Google Drive service entry point."""
 
 SERVICE_NAME = 'drive'
 
 
 def main() -> None:
-    """Запустить сервис. Сборка появляется на Стадии 3."""
-    raise SystemExit('drive: сервис ещё не собран, см. Stage 3 плана HLD')
+    """Start the service. Runtime assembly is added in Stage 3."""
+    raise SystemExit(
+        'drive: service is not built yet; see Stage 3 of the HLD plan'
+    )

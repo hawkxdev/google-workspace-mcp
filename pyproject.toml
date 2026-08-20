@@ -1,20 +1,20 @@
 [project]
 name = 'google-workspace-mcp'
 version = '0.1.0'
-description = 'Private remote MCP servers for Google Workspace'
+description = 'Remote MCP servers for Google Workspace'
 readme = 'README.md'
 requires-python = '>=3.14'
 license = { file = 'LICENSE' }
 dependencies = [
-    # mcp 2.0 заменил mcp.server.fastmcp на mcp.server.mcpserver;
-    # донорская граница <2 вызвана чужим апстримом и здесь не нужна.
-    # Extra [cli] не берём: он тянет typer и python-dotenv, а точки
-    # входа у нас свои и .env читает pydantic-settings
+    # MCP 2.0 replaced mcp.server.fastmcp with mcp.server.mcpserver.
+    # The donor's <2 bound came from an upstream dependency that is absent here.
+    # The [cli] extra is unnecessary: it adds typer and python-dotenv, while this
+    # package owns its entry points and uses pydantic-settings for environment data.
     'mcp>=2,<3',
     'google-auth>=2.56,<3',
     'google-auth-oauthlib>=1.4,<2',
     'google-api-python-client>=2.198,<3',
-    # нижняя граница продиктована самим mcp 2.0: pydantic>=2.12.0
+    # MCP 2.0 itself requires pydantic>=2.12.0.
     'pydantic>=2.12,<3',
     'pydantic-settings>=2.0,<3',
 ]
@@ -51,17 +51,17 @@ asyncio_default_fixture_loop_scope = 'function'
 line-length = 79
 
 [tool.ruff.lint]
-# 'E' целиком, а не E4/E7: правило E501 живёт только в широком
-# селекторе, а проект держит жёсткий лимит длины строки
+# Select all E rules because E501 is available only through the broad selector.
+# The project enforces a strict line length limit.
 select = ['E', 'F', 'I', 'SIM', 'UP', 'S', 'G']
 
 [tool.ruff.lint.per-file-ignores]
-# assert — штатная форма проверки в тестах; S105/S106 — фикстурные секреты,
-# намеренно узнаваемые маркеры, а не настоящие значения
+# Assertions are standard in tests. S105 and S106 cover recognizable fixture
+# markers that are deliberately not real secrets.
 'tests/**/*.py' = ['S101', 'S105', 'S106']
-# Перенесено из донора дословно. Механика не правится в момент переноса:
-# E501 — длинные литералы SQL и сообщений, SIM105 и S101 — донорские идиомы.
-# Снять при первой правке модуля по его собственным причинам, не раньше.
+# Ported from the donor without changing its mechanics. E501 covers long SQL and
+# message literals; SIM105 and S101 cover donor idioms. Remove these exceptions
+# only when the module is changed for its own behavior.
 'src/google_workspace_mcp/auth/state.py' = ['E501', 'SIM105', 'S101']
 
 [tool.ruff.lint.isort]
@@ -78,8 +78,8 @@ disallow_untyped_defs = true
 [tool.pyright]
 typeCheckingMode = 'basic'
 reportMissingTypeStubs = false
-# свой exclude ЗАМЕЩАЕТ умолчания pyright целиком, а среди них был
-# шаблон, державший .venv вне обхода
+# A custom pyright exclude list replaces all defaults, including the pattern that
+# normally keeps .venv outside workspace traversal.
 exclude = [
     '**/.venv/**',
     '**/__pycache__/**',

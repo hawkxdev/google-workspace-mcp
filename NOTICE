@@ -1,14 +1,14 @@
 google-workspace-mcp
 Copyright (c) 2026 Sergey Sokolkin
 
-Этот продукт содержит код, адаптированный из проекта
-`jimprosser/obsidian-web-mcp` под MIT License, ревизия
+This product contains code adapted from `jimprosser/obsidian-web-mcp`
+under the MIT License, revision
 `7e6a52d791a50e3bd533df1060217973ab5be1c8`.
 
-Исходный проект является первичным источником слоя OAuth 2.1, серверной
-авторизации и композиции транспорта. После указанной ревизии правообладатель
-этого продукта внёс дополнительные исправления жизненного цикла OAuth,
-привязки инварианта уникальности и канонизации RFC 8707 `resource`.
+The upstream project is the primary source of the OAuth 2.1 layer, server
+authorization, and transport composition. After that revision, the copyright
+holder of this product added fixes for the OAuth lifecycle, uniqueness
+invariant ownership, and RFC 8707 `resource` canonicalization.
 
-Адаптированные модули перечислены в разделе «Происхождение» файла README.md.
-Текст лицензии исходного проекта приведён в LICENSE.
+Adapted modules are listed in the Provenance section of README.md.
+The upstream license text is included in LICENSE.

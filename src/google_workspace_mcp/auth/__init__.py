@@ -1,4 +1,4 @@
-"""Слой авторизации «MCP-клиент → сервис»."""
+"""Client-to-service authorization layer."""
 
 from .state import (
     LEGACY_FULL,

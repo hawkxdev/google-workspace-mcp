@@ -1,4 +1,4 @@
-"""Точки входа сервисов."""
+"""Service entry points."""
 
 SERVICES: tuple[str, ...] = (
     'gmail',
