@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import uuid
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import (
     BaseHTTPMiddleware,
     RequestResponseEndpoint,
@@ -39,11 +41,20 @@ _AUTH_EXEMPT_PATHS = frozenset(
     }
 )
 
+_BEARER_CREDENTIALS = re.compile(
+    r'(?i:Bearer) +(?P<token>[A-Za-z0-9\-._~+/]+=*)\Z'
+)
+
 
 def protected_resource_metadata_url(resource: str) -> str:
     """Build RFC 9728 metadata URL."""
     parsed = urlsplit(resource)
-    metadata_path = f'/.well-known/oauth-protected-resource{parsed.path}'
+    if parsed.scheme != 'https' or not parsed.netloc or parsed.fragment:
+        raise ValueError(
+            'resource must be an absolute HTTPS URL without a fragment'
+        )
+    resource_path = '' if parsed.path == '/' else parsed.path
+    metadata_path = f'/.well-known/oauth-protected-resource{resource_path}'
     return urlunsplit(
         (parsed.scheme, parsed.netloc, metadata_path, parsed.query, '')
     )
@@ -57,19 +68,27 @@ def _credential_digest(token: str) -> str:
 def _auth_error(
     metadata_url: str,
     *,
-    message: str,
     status_code: int,
-    error: str,
-) -> JSONResponse:
-    """Build OAuth bearer error."""
-    challenge = (
-        f'Bearer realm="mcp", resource_metadata="{metadata_url}", '
-        f'error="{error}"'
-    )
+    scope: str | None,
+    message: str | None = None,
+    error: str | None = None,
+) -> Response:
+    """Build OAuth bearer response."""
+    parameters = [
+        'realm="mcp"',
+        f'resource_metadata="{metadata_url}"',
+    ]
+    if scope is not None:
+        parameters.append(f'scope="{scope}"')
+    if error is not None:
+        parameters.append(f'error="{error}"')
+    headers = {'WWW-Authenticate': f'Bearer {", ".join(parameters)}'}
+    if message is None:
+        return Response(status_code=status_code, headers=headers)
     return JSONResponse(
         {'error': message},
         status_code=status_code,
-        headers={'WWW-Authenticate': challenge},
+        headers=headers,
     )
 
 
@@ -91,9 +110,10 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
             expected_resource
         )
         resource_metadata_path = urlsplit(resource_metadata_url).path
+        resource_metadata_routing_path = unquote(resource_metadata_path)
         if (
             config.mcp_path in _AUTH_EXEMPT_PATHS
-            or config.mcp_path == resource_metadata_path
+            or config.mcp_path == resource_metadata_routing_path
         ):
             raise ValueError('MCP path collides with a public auth route')
         if oauth_state.path != expected_path:
@@ -111,17 +131,23 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         self._resource = expected_resource
         self._resource_metadata_url = resource_metadata_url
         self._resource_metadata_path = resource_metadata_path
+        self._resource_metadata_raw_path = resource_metadata_path.encode(
+            'ascii'
+        )
         self._readonly_capabilities = frozenset(
             oauth_state.readonly_capabilities
         )
+        self._required_scope = ' '.join(self._readonly_capabilities) or None
 
-    def _authenticate_bearer(
+    async def _authenticate_bearer(
         self, token: str
     ) -> AuthenticatedPrincipal | None:
         """Authenticate one bearer token."""
         if not token.startswith('v1.'):
             return None
-        metadata = self._oauth_state.lookup_access_token(token)
+        metadata = await run_in_threadpool(
+            self._oauth_state.lookup_access_token, token
+        )
         if metadata is None or metadata.resource != self._resource:
             return None
         capabilities = frozenset(metadata.capabilities)
@@ -147,7 +173,11 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
     def _request_is_exempt(self, request: Request) -> bool:
         """Check public request routes."""
         path = request.url.path
-        if path in _AUTH_EXEMPT_PATHS or path == self._resource_metadata_path:
+        raw_path = request.scope.get('raw_path', path.encode('ascii'))
+        if (
+            path in _AUTH_EXEMPT_PATHS
+            or raw_path == self._resource_metadata_raw_path
+        ):
             return True
         return (
             self._config.mcp_path != '/'
@@ -163,26 +193,46 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         """Authenticate one HTTP request."""
         if self._request_is_exempt(request):
             return await call_next(request)
-        auth_header = request.headers.get('Authorization', '')
-        auth_parts = auth_header.split(maxsplit=1)
-        if (
-            len(auth_parts) != 2
-            or auth_parts[0].lower() != 'bearer'
-            or not auth_parts[1]
-        ):
+        auth_headers = request.headers.getlist('Authorization')
+        if not auth_headers:
             return _auth_error(
                 self._resource_metadata_url,
-                message='Missing or malformed Authorization header',
                 status_code=401,
-                error='invalid_request',
+                scope=self._required_scope,
             )
-        principal = self._authenticate_bearer(auth_parts[1])
+        if len(auth_headers) != 1:
+            return _auth_error(
+                self._resource_metadata_url,
+                message='Malformed Authorization header',
+                status_code=400,
+                error='invalid_request',
+                scope=self._required_scope,
+            )
+        auth_header = auth_headers[0]
+        auth_parts = auth_header.split(maxsplit=1)
+        if not auth_parts or auth_parts[0].lower() != 'bearer':
+            return _auth_error(
+                self._resource_metadata_url,
+                status_code=401,
+                scope=self._required_scope,
+            )
+        match = _BEARER_CREDENTIALS.fullmatch(auth_header)
+        if match is None:
+            return _auth_error(
+                self._resource_metadata_url,
+                message='Malformed Authorization header',
+                status_code=400,
+                error='invalid_request',
+                scope=self._required_scope,
+            )
+        principal = await self._authenticate_bearer(match.group('token'))
         if principal is None:
             return _auth_error(
                 self._resource_metadata_url,
                 message='Invalid token',
                 status_code=401,
                 error='invalid_token',
+                scope=self._required_scope,
             )
         if (
             not principal.full_access
@@ -193,6 +243,7 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
                 message='Insufficient scope',
                 status_code=403,
                 error='insufficient_scope',
+                scope=self._required_scope,
             )
         context_token = set_request_context(
             principal=principal,

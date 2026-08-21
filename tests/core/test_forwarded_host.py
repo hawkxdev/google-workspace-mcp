@@ -110,6 +110,82 @@ def test_resource_metadata_url_uses_default_path_for_origin() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    'resource',
+    [
+        'http://mcp.example.test/gmail/mcp',
+        'relative/gmail/mcp',
+        'https:///gmail/mcp',
+        'https://mcp.example.test/gmail/mcp#fragment',
+    ],
+)
+def test_resource_metadata_url_rejects_invalid_resource(
+    resource: str,
+) -> None:
+    with pytest.raises(ValueError, match='resource'):
+        protected_resource_metadata_url(resource)
+
+
+def test_resource_metadata_url_removes_authority_trailing_slash() -> None:
+    assert protected_resource_metadata_url('https://mcp.example.test/') == (
+        'https://mcp.example.test/.well-known/oauth-protected-resource'
+    )
+
+
+def test_percent_encoded_resource_metadata_route_is_public(
+    tmp_path: Path,
+) -> None:
+    resource = 'https://mcp.example.test/gmail%2Fmcp'
+    config = ServiceConfig(
+        service_id='gmail',
+        public_url=resource,
+        mcp_path='/gmail/mcp',
+        host='127.0.0.1',
+        port=8431,
+        oauth_state_path=tmp_path / 'encoded.sqlite3',
+        google_token_path=tmp_path / 'google-token.json',
+        allowed_hosts=('mcp.example.test',),
+        forwarded_allow_ips=('127.0.0.1',),
+        legacy_clients_path=None,
+        approved_legacy_client_ids=frozenset(),
+        access_token_ttl_seconds=86400,
+        refresh_token_ttl_seconds=2592000,
+    )
+    state = OAuthState(
+        config.oauth_state_path,
+        download_path=tmp_path / 'downloads',
+        service_id=config.service_id,
+        resource=config.public_url,
+    )
+
+    async def metadata(_: Request) -> PlainTextResponse:
+        return PlainTextResponse('metadata')
+
+    app = Starlette(
+        routes=[
+            Route(
+                '/.well-known/oauth-protected-resource/gmail/mcp',
+                metadata,
+            )
+        ]
+    )
+    app.add_middleware(
+        BearerAuthMiddleware,
+        config=config,
+        oauth_state=state,
+    )
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.get(
+                '/.well-known/oauth-protected-resource/gmail%2Fmcp'
+            )
+    finally:
+        state.close()
+
+    assert response.status_code == 200
+    assert response.text == 'metadata'
+
+
 def test_challenge_ignores_spoofed_host(client: TestClient) -> None:
     response = client.get('/gmail/mcp', headers=SPOOFED_HEADERS)
 
