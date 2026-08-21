@@ -2,7 +2,7 @@
 
 A project for building five independent remote MCP servers for Google Workspace: Gmail, Google Calendar, Google Drive, Google Sheets, and Google Docs.
 
-> **Status: pre-alpha.** The MCP servers are not operational yet. The repository currently contains the package scaffold, five placeholder entry points, the downstream OAuth state core, and immutable per-service configuration.
+> **Status: pre-alpha.** The MCP servers are not operational yet. The repository currently contains the package scaffold, five placeholder entry points, the downstream OAuth state core, OAuth-only bearer middleware, and immutable per-service configuration.
 
 ## Current status
 
@@ -14,7 +14,10 @@ Implemented:
 - token binding to a canonical `resource`;
 - refresh token rotation, replay detection, and family revocation;
 - immutable state ownership metadata for the service and resource;
-- immutable per-service configuration with strict port and token TTL validation.
+- immutable per-service configuration with strict port and token TTL validation;
+- OAuth-only bearer authentication with RFC 9728 challenges;
+- request-scoped, secret-free authenticated principal metadata;
+- fail-closed binding between service configuration and OAuth state ownership.
 
 All five console entry points are placeholders and exit with a message that the service is not built. The HTTP/MCP transport, Google API integration, service tools, and deployment configuration are not implemented yet.
 
@@ -40,13 +43,14 @@ The design uses two independent layers:
 
 **Service to Google.** Each service uses separate Google credentials and the minimum required OAuth scopes. Google refresh tokens are never returned to MCP clients.
 
-Only the state core for the first layer exists today. HTTP endpoints and the second authorization layer are not implemented.
+The state core and OAuth-only bearer middleware for the first layer exist today. OAuth routes, service composition, and the second authorization layer are not implemented.
 
 ## Technology
 
 - [Python 3.14](https://docs.python.org/3.14/)
 - [uv](https://docs.astral.sh/uv/)
 - [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
+- [Starlette](https://www.starlette.io/)
 - [Pydantic](https://docs.pydantic.dev/)
 - [Google API Python Client](https://github.com/googleapis/google-api-python-client)
 
@@ -84,6 +88,8 @@ The `--no-sync` flag is required when checking the installed dependency version.
 | Path | Purpose |
 |---|---|
 | `src/google_workspace_mcp/auth/state.py` | downstream OAuth state lifecycle |
+| `src/google_workspace_mcp/auth/bearer.py` | OAuth-only bearer middleware and RFC 9728 challenges |
+| `src/google_workspace_mcp/auth/context.py` | request-scoped authenticated principal metadata |
 | `src/google_workspace_mcp/common/config.py` | immutable per-service environment configuration |
 | `src/google_workspace_mcp/cli/` | five placeholder entry points |
 | `tests/core/` | OAuth core and package entry point regressions |

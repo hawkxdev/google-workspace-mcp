@@ -301,6 +301,11 @@ class OAuthState:
                 self._connection.execute('PRAGMA user_version').fetchone()[0]
             )
 
+    @property
+    def readonly_capabilities(self) -> tuple[str, ...]:
+        """Read configured capabilities."""
+        return self._readonly_capabilities
+
     def table_names(self) -> set[str]:
         """List database tables."""
         with self._lock:
