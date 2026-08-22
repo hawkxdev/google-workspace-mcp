@@ -1,4 +1,4 @@
-"""Test advertised OAuth resource URLs."""
+"""Test OAuth resource URLs."""
 
 from collections.abc import Iterator
 from pathlib import Path
@@ -10,10 +10,8 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from google_workspace_mcp.auth.bearer import (
-    BearerAuthMiddleware,
-    protected_resource_metadata_url,
-)
+from google_workspace_mcp.auth.bearer import BearerAuthMiddleware
+from google_workspace_mcp.auth.oauth import protected_resource_metadata_url
 from google_workspace_mcp.auth.state import OAuthState
 from google_workspace_mcp.common.config import ServiceConfig
 
@@ -89,6 +87,13 @@ def client(
                 '/.well-known/oauth-protected-resource/gmail/mcp',
                 metadata,
             ),
+            Route(
+                '/.well-known/oauth-authorization-server/gmail/mcp',
+                metadata,
+            ),
+            Route('/gmail/mcp/oauth/authorize', metadata),
+            Route('/gmail/mcp/oauth/token', metadata),
+            Route('/gmail/mcp/oauth/register', metadata),
         ]
     )
     app.add_middleware(
@@ -135,6 +140,7 @@ def test_resource_metadata_url_removes_authority_trailing_slash() -> None:
 def test_percent_encoded_resource_metadata_route_is_public(
     tmp_path: Path,
 ) -> None:
+    # 1. Build encoded config
     resource = 'https://mcp.example.test/gmail%2Fmcp'
     config = ServiceConfig(
         service_id='gmail',
@@ -151,6 +157,7 @@ def test_percent_encoded_resource_metadata_route_is_public(
         access_token_ttl_seconds=86400,
         refresh_token_ttl_seconds=2592000,
     )
+    # 2. Build protected app
     state = OAuthState(
         config.oauth_state_path,
         download_path=tmp_path / 'downloads',
@@ -159,6 +166,7 @@ def test_percent_encoded_resource_metadata_route_is_public(
     )
 
     async def metadata(_: Request) -> PlainTextResponse:
+        """Return metadata response."""
         return PlainTextResponse('metadata')
 
     app = Starlette(
@@ -174,6 +182,7 @@ def test_percent_encoded_resource_metadata_route_is_public(
         config=config,
         oauth_state=state,
     )
+    # 3. Request encoded metadata
     try:
         with TestClient(app) as test_client:
             response = test_client.get(
@@ -182,6 +191,7 @@ def test_percent_encoded_resource_metadata_route_is_public(
     finally:
         state.close()
 
+    # 4. Verify public response
     assert response.status_code == 200
     assert response.text == 'metadata'
 
@@ -200,6 +210,33 @@ def test_resource_metadata_route_is_public(client: TestClient) -> None:
         '/.well-known/oauth-protected-resource/gmail/mcp',
         headers=SPOOFED_HEADERS,
     )
+
+    assert response.status_code == 200
+    assert response.text == 'metadata'
+
+
+def test_server_metadata_route_is_public(client: TestClient) -> None:
+    response = client.get(
+        '/.well-known/oauth-authorization-server/gmail/mcp',
+        headers=SPOOFED_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.text == 'metadata'
+
+
+@pytest.mark.parametrize(
+    'path',
+    [
+        '/gmail/mcp/oauth/authorize',
+        '/gmail/mcp/oauth/token',
+        '/gmail/mcp/oauth/register',
+    ],
+)
+def test_operational_oauth_routes_are_public(
+    client: TestClient, path: str
+) -> None:
+    response = client.get(path, headers=SPOOFED_HEADERS)
 
     assert response.status_code == 200
     assert response.text == 'metadata'

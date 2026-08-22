@@ -7,7 +7,7 @@ import pytest
 
 from google_workspace_mcp.common.config import ServiceConfig
 
-# === Shared configuration setup ===
+# Shared configuration setup
 
 SERVICES_AND_PORTS = {
     'gmail': 8431,
@@ -43,7 +43,7 @@ def clear_service_config_environment(
             monkeypatch.delenv(f'{service.upper()}_{suffix}', raising=False)
 
 
-# === Valid configuration cases ===
+# Valid configuration cases
 class TestValidConfiguration:
     """Valid configuration cases."""
 
@@ -177,7 +177,7 @@ class TestValidConfiguration:
             ServiceConfig.from_env('gmail')
 
 
-# === Invalid configuration cases ===
+# Invalid configuration cases
 class TestInvalidConfiguration:
     """Invalid configuration cases."""
 
@@ -234,7 +234,7 @@ class TestInvalidConfiguration:
             ServiceConfig.from_env('docs')
 
 
-# === Configuration boundary cases ===
+# Configuration boundary cases
 class TestBoundaryConfiguration:
     """Boundary configuration cases."""
 

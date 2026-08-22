@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import uuid
-from urllib.parse import unquote, urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit
 
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.base import (
@@ -22,6 +22,11 @@ from .context import (
     AuthenticatedPrincipal,
     reset_request_context,
     set_request_context,
+)
+from .oauth import (
+    authorization_server_metadata_url,
+    oauth_endpoint_urls,
+    protected_resource_metadata_url,
 )
 from .state import (
     LEGACY_FULL,
@@ -46,22 +51,8 @@ _BEARER_CREDENTIALS = re.compile(
 )
 
 
-def protected_resource_metadata_url(resource: str) -> str:
-    """Build RFC 9728 metadata URL."""
-    parsed = urlsplit(resource)
-    if parsed.scheme != 'https' or not parsed.netloc or parsed.fragment:
-        raise ValueError(
-            'resource must be an absolute HTTPS URL without a fragment'
-        )
-    resource_path = '' if parsed.path == '/' else parsed.path
-    metadata_path = f'/.well-known/oauth-protected-resource{resource_path}'
-    return urlunsplit(
-        (parsed.scheme, parsed.netloc, metadata_path, parsed.query, '')
-    )
-
-
 def _credential_digest(token: str) -> str:
-    """Derive secret-free credential identity."""
+    """Derive secure credential identity."""
     return hashlib.sha256(token.encode('utf-8')).hexdigest()
 
 
@@ -109,11 +100,23 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         resource_metadata_url = protected_resource_metadata_url(
             expected_resource
         )
+        server_metadata_url = authorization_server_metadata_url(
+            expected_resource
+        )
         resource_metadata_path = urlsplit(resource_metadata_url).path
-        resource_metadata_routing_path = unquote(resource_metadata_path)
+        server_metadata_path = urlsplit(server_metadata_url).path
+        oauth_paths = tuple(
+            urlsplit(url).path
+            for url in oauth_endpoint_urls(expected_resource)
+        )
+        public_routing_paths = {
+            unquote(resource_metadata_path),
+            unquote(server_metadata_path),
+            *(unquote(path) for path in oauth_paths),
+        }
         if (
             config.mcp_path in _AUTH_EXEMPT_PATHS
-            or config.mcp_path == resource_metadata_routing_path
+            or config.mcp_path in public_routing_paths
         ):
             raise ValueError('MCP path collides with a public auth route')
         if oauth_state.path != expected_path:
@@ -130,9 +133,13 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         self._oauth_state = oauth_state
         self._resource = expected_resource
         self._resource_metadata_url = resource_metadata_url
-        self._resource_metadata_path = resource_metadata_path
-        self._resource_metadata_raw_path = resource_metadata_path.encode(
-            'ascii'
+        self._public_raw_paths = frozenset(
+            path.encode('ascii')
+            for path in (
+                resource_metadata_path,
+                server_metadata_path,
+                *oauth_paths,
+            )
         )
         self._readonly_capabilities = frozenset(
             oauth_state.readonly_capabilities
@@ -174,10 +181,7 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         """Check public request routes."""
         path = request.url.path
         raw_path = request.scope.get('raw_path', path.encode('ascii'))
-        if (
-            path in _AUTH_EXEMPT_PATHS
-            or raw_path == self._resource_metadata_raw_path
-        ):
+        if path in _AUTH_EXEMPT_PATHS or raw_path in self._public_raw_paths:
             return True
         return (
             self._config.mcp_path != '/'

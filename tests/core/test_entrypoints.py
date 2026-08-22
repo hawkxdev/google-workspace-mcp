@@ -6,7 +6,7 @@ import pytest
 
 from google_workspace_mcp.cli import SERVICES
 
-# === Service entrypoint cases ===
+# Service entrypoint cases
 
 
 def test_five_services_are_declared() -> None:
@@ -30,7 +30,7 @@ def test_entrypoint_reports_unavailable_runtime(service: str) -> None:
         module.main()
 
 
-# === SDK compatibility cases ===
+# SDK compatibility cases
 
 
 def test_sdk_server_contract_is_present() -> None:

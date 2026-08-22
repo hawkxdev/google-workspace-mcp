@@ -1,4 +1,4 @@
-"""Test OAuth-only bearer authentication."""
+"""Test OAuth bearer authentication."""
 
 import asyncio
 import time
@@ -59,7 +59,7 @@ def _service_config(state_dir: Path) -> ServiceConfig:
 
 @pytest.fixture
 def service_config(state_dir: Path) -> ServiceConfig:
-    """Build isolated service config fixture."""
+    """Build service config fixture."""
     return _service_config(state_dir)
 
 
@@ -116,7 +116,7 @@ def _single_route_app(
     oauth_state: OAuthState,
     endpoint: Callable[[Request], Awaitable[Response]],
 ) -> Starlette:
-    """Build one-route middleware application."""
+    """Build single route application."""
     app = Starlette(routes=[Route(service_config.mcp_path, endpoint)])
     app.add_middleware(
         BearerAuthMiddleware,
@@ -159,7 +159,8 @@ async def _asgi_request(
     method: str = 'GET',
     authorization: str | None = None,
 ) -> tuple[int, bytes]:
-    """Issue one request in this task."""
+    """Issue request in task."""
+    # 1. Build request scope
     headers = []
     if authorization is not None:
         headers.append((b'authorization', authorization.encode('ascii')))
@@ -178,10 +179,12 @@ async def _asgi_request(
         'server': ('mcp.example.test', 443),
         'state': {},
     }
+    # 2. Prepare ASGI channels
     messages: list[Message] = []
     delivered = False
 
     async def receive() -> Message:
+        """Receive one ASGI request."""
         nonlocal delivered
         if not delivered:
             delivered = True
@@ -190,9 +193,12 @@ async def _asgi_request(
         raise AssertionError('unreachable')
 
     async def send(message: Message) -> None:
+        """Capture one ASGI response."""
         messages.append(message)
 
+    # 3. Execute application
     await app(scope, receive, send)
+    # 4. Collect response
     status = next(
         message['status']
         for message in messages
@@ -257,6 +263,10 @@ def test_middleware_rejects_mismatched_resource(
         '/oauth/token',
         '/oauth/register',
         '/.well-known/oauth-protected-resource/gmail/mcp',
+        '/.well-known/oauth-authorization-server/gmail/mcp',
+        '/gmail/mcp/oauth/authorize',
+        '/gmail/mcp/oauth/token',
+        '/gmail/mcp/oauth/register',
     ],
 )
 def test_middleware_rejects_public_mcp_path_collision(
@@ -293,6 +303,7 @@ def test_root_exemption_respects_mcp_path_and_method(
     config = replace(service_config, mcp_path=mcp_path)
 
     async def root(_: Request) -> PlainTextResponse:
+        """Return root endpoint response."""
         return PlainTextResponse('root')
 
     app = Starlette(routes=[Route('/', root, methods=['GET', 'HEAD', 'POST'])])
@@ -549,15 +560,18 @@ async def test_token_lookup_does_not_block_event_loop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     token, _ = _issue_token(oauth_state)
+    # Slow token lookup
     original_lookup = oauth_state.lookup_access_token
 
     def slow_lookup(value: str):
+        """Simulate slow token lookup."""
         time.sleep(0.35)
         return original_lookup(value)
 
     monkeypatch.setattr(oauth_state, 'lookup_access_token', slow_lookup)
 
     async def endpoint(_: Request) -> PlainTextResponse:
+        """Return test endpoint response."""
         return PlainTextResponse('ok')
 
     app = Starlette(
@@ -571,6 +585,7 @@ async def test_token_lookup_does_not_block_event_loop(
         config=service_config,
         oauth_state=oauth_state,
     )
+    # Concurrent health probe
     started = asyncio.get_running_loop().time()
     protected = asyncio.create_task(
         _asgi_request(
@@ -584,6 +599,7 @@ async def test_token_lookup_does_not_block_event_loop(
     health_status, _ = await _asgi_request(app, '/health')
     protected_status, _ = await protected
 
+    # Timing assertions
     assert protected_status == 200
     assert health_status == 200
     assert wake_delay < 0.2
@@ -597,6 +613,7 @@ async def test_request_context_resets_in_request_task_after_success(
     token, _ = _issue_token(oauth_state)
 
     async def endpoint(_: Request) -> PlainTextResponse:
+        """Return contextual test response."""
         assert current_request_context() is not None
         return PlainTextResponse('ok')
 
@@ -619,6 +636,7 @@ async def test_request_context_resets_after_downstream_exception(
     token, _ = _issue_token(oauth_state)
 
     async def endpoint(_: Request) -> PlainTextResponse:
+        """Raise downstream test failure."""
         assert current_request_context() is not None
         raise RuntimeError('downstream failed')
 
@@ -661,6 +679,7 @@ async def test_request_context_resets_after_downstream_cancellation(
     )
 
     async def endpoint(_: Request) -> Response:
+        """Raise downstream cancellation signal."""
         assert current_request_context() is not None
         raise asyncio.CancelledError
 
@@ -687,6 +706,7 @@ async def test_request_context_restores_nested_context(
     outer_token = set_request_context(outer_principal, 'outer-request')
 
     async def endpoint(_: Request) -> PlainTextResponse:
+        """Return authenticated principal identity."""
         principal = current_principal()
         assert principal is not None
         return PlainTextResponse(principal.principal_id)
@@ -720,6 +740,7 @@ async def test_concurrent_requests_have_isolated_contexts(
     both_entered = asyncio.Event()
 
     async def endpoint(_: Request) -> PlainTextResponse:
+        """Capture request context state."""
         context = current_request_context()
         assert context is not None
         contexts.append(context)
