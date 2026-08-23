@@ -39,6 +39,9 @@ def service_config(state_dir: Path) -> ServiceConfig:
         download_path=state_dir / 'downloads',
         oauth_state_path=state_dir / 'oauth.sqlite3',
         google_token_path=state_dir / 'google-token.json',
+        audit_log_path=state_dir / 'audit.jsonl',
+        oauth_login_username='admin',
+        oauth_login_password='test-password',
         allowed_hosts=('mcp.example.test',),
         forwarded_allow_ips=('127.0.0.1',),
         legacy_clients_path=None,
@@ -152,6 +155,9 @@ def test_percent_encoded_resource_metadata_route_is_public(
         download_path=tmp_path / 'downloads',
         oauth_state_path=tmp_path / 'encoded.sqlite3',
         google_token_path=tmp_path / 'google-token.json',
+        audit_log_path=tmp_path / 'audit.jsonl',
+        oauth_login_username='admin',
+        oauth_login_password='test-password',
         allowed_hosts=('mcp.example.test',),
         forwarded_allow_ips=('127.0.0.1',),
         legacy_clients_path=None,
@@ -248,8 +254,9 @@ def test_forwarded_allow_ips_default_is_loopback_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv('GMAIL_MCP_FORWARDED_ALLOW_IPS', raising=False)
+    monkeypatch.setenv('GMAIL_OAUTH_LOGIN_USERNAME', 'admin')
+    monkeypatch.setenv('GMAIL_OAUTH_LOGIN_PASSWORD', 'test-password')
 
     config = ServiceConfig.from_env('gmail')
-
     assert config.forwarded_allow_ips == ('127.0.0.1',)
     assert '*' not in config.forwarded_allow_ips

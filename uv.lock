@@ -416,6 +416,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "starlette" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -435,6 +436,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-settings", specifier = ">=2.0,<3" },
     { name = "starlette", specifier = ">=1.6,<2" },
+    { name = "uvicorn", specifier = ">=0.52,<0.53" },
 ]
 
 [package.metadata.requires-dev]

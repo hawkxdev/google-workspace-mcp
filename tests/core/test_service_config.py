@@ -25,6 +25,9 @@ CONFIG_ENV_SUFFIXES = (
     'MCP_DOWNLOAD_PATH',
     'OAUTH_STATE_PATH',
     'GOOGLE_TOKEN_PATH',
+    'AUDIT_LOG_PATH',
+    'OAUTH_LOGIN_USERNAME',
+    'OAUTH_LOGIN_PASSWORD',
     'MCP_ALLOWED_HOSTS',
     'MCP_FORWARDED_ALLOW_IPS',
     'OAUTH_LEGACY_CLIENTS_PATH',
@@ -42,6 +45,10 @@ def clear_service_config_environment(
     for service in SERVICES_AND_PORTS:
         for suffix in CONFIG_ENV_SUFFIXES:
             monkeypatch.delenv(f'{service.upper()}_{suffix}', raising=False)
+        monkeypatch.setenv(f'{service.upper()}_OAUTH_LOGIN_USERNAME', 'admin')
+        monkeypatch.setenv(
+            f'{service.upper()}_OAUTH_LOGIN_PASSWORD', 'super-secret'
+        )
 
 
 # Valid configuration cases
@@ -60,6 +67,10 @@ class TestValidConfiguration:
         assert config.download_path == state_dir / 'downloads'
         assert config.oauth_state_path == state_dir / 'oauth_state.sqlite3'
         assert config.google_token_path == state_dir / 'google_token.json'
+        assert config.audit_log_path == state_dir / 'audit.jsonl'
+        assert config.oauth_login_username == 'admin'
+        assert config.oauth_login_password == 'super-secret'
+        assert 'super-secret' not in repr(config)
         assert config.allowed_hosts == ()
         assert config.forwarded_allow_ips == ('127.0.0.1',)
         assert config.legacy_clients_path is None
@@ -88,6 +99,9 @@ class TestValidConfiguration:
             'GMAIL_MCP_DOWNLOAD_PATH': '/var/lib/mail/downloads',
             'GMAIL_OAUTH_STATE_PATH': '/var/lib/mail/oauth.json',
             'GMAIL_GOOGLE_TOKEN_PATH': '/var/lib/mail/token.json',
+            'GMAIL_AUDIT_LOG_PATH': '/var/lib/mail/audit.jsonl',
+            'GMAIL_OAUTH_LOGIN_USERNAME': 'custom-user',
+            'GMAIL_OAUTH_LOGIN_PASSWORD': 'custom-password',
             'GMAIL_MCP_ALLOWED_HOSTS': (
                 ' mail.example.test, api.example.test,mail.example.test '
             ),
@@ -110,6 +124,10 @@ class TestValidConfiguration:
         assert config.download_path == Path('/var/lib/mail/downloads')
         assert config.oauth_state_path == Path('/var/lib/mail/oauth.json')
         assert config.google_token_path == Path('/var/lib/mail/token.json')
+        assert config.audit_log_path == Path('/var/lib/mail/audit.jsonl')
+        assert config.oauth_login_username == 'custom-user'
+        assert config.oauth_login_password == 'custom-password'
+        assert 'custom-password' not in repr(config)
         assert config.allowed_hosts == (
             'mail.example.test',
             'api.example.test',
@@ -207,6 +225,9 @@ class TestInvalidConfiguration:
             'MCP_DOWNLOAD_PATH',
             'OAUTH_STATE_PATH',
             'GOOGLE_TOKEN_PATH',
+            'AUDIT_LOG_PATH',
+            'OAUTH_LOGIN_USERNAME',
+            'OAUTH_LOGIN_PASSWORD',
         ],
     )
     @pytest.mark.parametrize('value', ['', '   '])

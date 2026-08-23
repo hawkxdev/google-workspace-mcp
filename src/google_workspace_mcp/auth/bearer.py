@@ -117,6 +117,12 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         if (
             config.mcp_path in _AUTH_EXEMPT_PATHS
             or config.mcp_path in public_routing_paths
+            or config.mcp_path == '/ready'
+            or any(
+                config.mcp_path == prefix
+                or config.mcp_path.startswith(prefix + '/')
+                for prefix in ('/oauth', '/.well-known')
+            )
         ):
             raise ValueError('MCP path collides with a public auth route')
         if oauth_state.path != expected_path:
@@ -238,9 +244,9 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
                 error='invalid_token',
                 scope=self._required_scope,
             )
-        if (
-            not principal.full_access
-            and request.url.path != self._config.mcp_path
+        if not principal.full_access and request.url.path not in (
+            self._config.mcp_path,
+            '/ready',
         ):
             return _auth_error(
                 self._resource_metadata_url,

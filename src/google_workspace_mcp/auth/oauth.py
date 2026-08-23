@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import html
@@ -491,7 +492,7 @@ class OAuthEndpoints:
                 'refresh_token, client_id, and resource are required',
             )
         if resource != self._canonical_resource:
-            self._audit_refresh_failure(client_id, 'invalid_target')
+            await self._audit_refresh_failure(client_id, 'invalid_target')
             return _oauth_error(
                 'invalid_target', 'resource must match this server'
             )
@@ -503,25 +504,25 @@ class OAuthEndpoints:
                 resource=resource,
             )
         except InvalidClient:
-            self._audit_refresh_failure(client_id, 'invalid_client')
+            await self._audit_refresh_failure(client_id, 'invalid_client')
             return _oauth_error(
                 'invalid_client',
                 'client authentication failed',
                 status_code=401,
             )
         except InvalidTarget:
-            self._audit_refresh_failure(client_id, 'invalid_target')
+            await self._audit_refresh_failure(client_id, 'invalid_target')
             return _oauth_error(
                 'invalid_target',
                 'resource does not match authorization',
             )
         except InvalidGrant:
-            self._audit_refresh_failure(client_id, 'invalid_grant')
+            await self._audit_refresh_failure(client_id, 'invalid_grant')
             return _oauth_error('invalid_grant', 'refresh token is invalid')
-        self._audit_refresh_rotation(issued)
+        await self._audit_refresh_rotation(issued)
         return _token_response(issued)
 
-    def _audit_refresh_rotation(self, issued: IssuedAccessToken) -> None:
+    async def _audit_refresh_rotation(self, issued: IssuedAccessToken) -> None:
         """Record refresh rotation event."""
         token_id_hash = hashlib.sha256(
             issued.access_token.encode('utf-8')
@@ -535,9 +536,9 @@ class OAuthEndpoints:
             'auth_policy': issued.token.policy,
             'token_id_hash': token_id_hash,
         }
-        self._write_audit(record)
+        await self._write_audit(record)
 
-    def _audit_refresh_failure(self, client_id: str, error: str) -> None:
+    async def _audit_refresh_failure(self, client_id: str, error: str) -> None:
         """Record refresh failure event."""
         record: dict[str, object] = {
             'timestamp': datetime.now(UTC).isoformat(),
@@ -547,14 +548,11 @@ class OAuthEndpoints:
             'principal_id': f'oauth:{client_id}' if client_id else None,
             'error': error,
         }
-        self._write_audit(record)
+        await self._write_audit(record)
 
-    def _write_audit(self, record: dict[str, object]) -> None:
+    async def _write_audit(self, record: dict[str, object]) -> None:
         """Safely write audit record."""
-        try:
-            self._audit_writer(record)
-        except Exception:
-            logger.error('OAuth audit writer failed')
+        await asyncio.to_thread(self._audit_writer, record)
 
     async def oauth_token(self, request: Request) -> JSONResponse:
         """Handle token exchange request."""

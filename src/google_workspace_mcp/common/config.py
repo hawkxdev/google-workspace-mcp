@@ -2,7 +2,7 @@
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 _STATE_ROOT = Path('~/.local/share/google-workspace-mcp')
@@ -81,6 +81,55 @@ def _integer(
     return parsed
 
 
+def _validate_mcp_path(path: str) -> None:
+    """Validate MCP streamable path."""
+    if path == '/':
+        return
+    if not path.startswith('/'):
+        raise ValueError(
+            f"MCP path must be an absolute path starting with '/': {path!r}"
+        )
+    if path.endswith('/'):
+        raise ValueError(
+            f'MCP path must not end with a trailing slash: {path!r}'
+        )
+    if '?' in path or '#' in path or '//' in path:
+        raise ValueError(
+            'MCP path must be a clean path with no query string, fragment, '
+            f'or empty segments: {path!r}'
+        )
+    if '%' in path or any(c.isspace() or ord(c) < 0x20 for c in path):
+        raise ValueError(
+            'MCP path must not contain percent-encoding, whitespace, or '
+            f'control characters: {path!r}'
+        )
+    if any(seg in ('.', '..') for seg in path.strip('/').split('/')):
+        raise ValueError(
+            f"MCP path must not contain '.' or '..' path segments: {path!r}"
+        )
+    reserved_prefixes = ('/oauth', '/.well-known')
+    collides = path in ('/health', '/ready') or any(
+        path == prefix or path.startswith(prefix + '/')
+        for prefix in reserved_prefixes
+    )
+    if collides:
+        raise ValueError(
+            f'MCP path {path!r} collides with an authentication-exempt or '
+            'system route'
+        )
+
+
+def _validate_forwarded_allow_ips(
+    ips: tuple[str, ...], prefix: str
+) -> tuple[str, ...]:
+    """Validate forwarded IP list."""
+    if any('*' in ip for ip in ips):
+        raise ValueError(
+            f'{prefix}_MCP_FORWARDED_ALLOW_IPS must not contain wildcard'
+        )
+    return ips
+
+
 # === Service configuration model ===
 
 
@@ -96,6 +145,9 @@ class ServiceConfig:
     download_path: Path
     oauth_state_path: Path
     google_token_path: Path
+    audit_log_path: Path
+    oauth_login_username: str
+    oauth_login_password: str = field(repr=False)
     allowed_hosts: tuple[str, ...]
     forwarded_allow_ips: tuple[str, ...]
     legacy_clients_path: Path | None
@@ -120,6 +172,7 @@ class ServiceConfig:
             env, public_url_key, f'http://127.0.0.1:{port}'
         )
         mcp_path = _required_string(env, mcp_path_key, f'/{service}/mcp')
+        _validate_mcp_path(mcp_path)
         state_dir = (_STATE_ROOT / service).expanduser()
         download_key = f'{prefix}_MCP_DOWNLOAD_PATH'
         download_path = _required_path(
@@ -127,14 +180,24 @@ class ServiceConfig:
         )
         state_key = f'{prefix}_OAUTH_STATE_PATH'
         token_key = f'{prefix}_GOOGLE_TOKEN_PATH'
+        audit_key = f'{prefix}_AUDIT_LOG_PATH'
         state_path = _required_path(
             env, state_key, state_dir / 'oauth_state.sqlite3'
         )
         token_path = _required_path(
             env, token_key, state_dir / 'google_token.json'
         )
+        audit_path = _required_path(env, audit_key, state_dir / 'audit.jsonl')
         if os.path.abspath(state_path) == os.path.abspath(token_path):
             raise ValueError(f'{state_key} and {token_key} must differ')
+        username_key = f'{prefix}_OAUTH_LOGIN_USERNAME'
+        password_key = f'{prefix}_OAUTH_LOGIN_PASSWORD'
+        username_val = env.get(username_key)
+        if username_val is None or not username_val.strip():
+            raise ValueError(f'{username_key} must not be empty')
+        password_val = env.get(password_key)
+        if password_val is None or not password_val.strip():
+            raise ValueError(f'{password_key} must not be empty')
         # 2. Parse OAuth settings
         approved = frozenset(
             _csv(env.get(f'{prefix}_OAUTH_APPROVED_LEGACY_CLIENT_IDS'))
@@ -149,11 +212,17 @@ class ServiceConfig:
             download_path=download_path,
             oauth_state_path=state_path,
             google_token_path=token_path,
+            audit_log_path=audit_path,
+            oauth_login_username=username_val.strip(),
+            oauth_login_password=password_val.strip(),
             allowed_hosts=_csv(env.get(f'{prefix}_MCP_ALLOWED_HOSTS')),
             forwarded_allow_ips=(
-                _csv(env.get(f'{prefix}_MCP_FORWARDED_ALLOW_IPS'))
-                if f'{prefix}_MCP_FORWARDED_ALLOW_IPS' in env
-                else ('127.0.0.1',)
+                _validate_forwarded_allow_ips(
+                    _csv(env.get(f'{prefix}_MCP_FORWARDED_ALLOW_IPS'))
+                    if f'{prefix}_MCP_FORWARDED_ALLOW_IPS' in env
+                    else ('127.0.0.1',),
+                    prefix,
+                )
             ),
             legacy_clients_path=_path(
                 env.get(f'{prefix}_OAUTH_LEGACY_CLIENTS_PATH')

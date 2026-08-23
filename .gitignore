@@ -11,5 +11,5 @@ __pycache__/
 *.pem
 *.key
 deploy-key*
-state/
-audit/
+/state/
+/audit/

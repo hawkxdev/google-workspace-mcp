@@ -48,6 +48,9 @@ def _configure_service(
     monkeypatch.setenv(
         f'{prefix}_GOOGLE_TOKEN_PATH', str(root / 'google-token.json')
     )
+    monkeypatch.setenv(f'{prefix}_AUDIT_LOG_PATH', str(root / 'audit.jsonl'))
+    monkeypatch.setenv(f'{prefix}_OAUTH_LOGIN_USERNAME', 'admin')
+    monkeypatch.setenv(f'{prefix}_OAUTH_LOGIN_PASSWORD', 'test-password')
     if legacy_path is not None:
         monkeypatch.setenv(
             f'{prefix}_OAUTH_LEGACY_CLIENTS_PATH', str(legacy_path)

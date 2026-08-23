@@ -2,7 +2,7 @@
 
 A project for building five independent remote MCP servers for Google Workspace: Gmail, Google Calendar, Google Drive, Google Sheets, and Google Docs.
 
-> **Status: pre-alpha.** The MCP servers are not operational yet. The repository currently contains the package scaffold, five placeholder service entry points, the downstream OAuth state core, OAuth-only bearer middleware, path-scoped OAuth routes, a metadata-only OAuth administration CLI, and immutable per-service configuration.
+> **Status: pre-alpha.** The repository contains five locally runnable MCP service processes with empty tool registries, isolated OAuth state and audit targets, OAuth-only bearer middleware, path-scoped OAuth routes, secure health and readiness endpoints, a metadata-only OAuth administration CLI, and immutable per-service configuration. Google API integration and service tools are not implemented yet.
 
 ## Current status
 
@@ -19,9 +19,14 @@ Implemented:
 - path-scoped OAuth metadata, authorization, token, and registration routes;
 - request-scoped, secret-free authenticated principal metadata;
 - fail-closed binding between service configuration and OAuth state ownership;
-- a metadata-only OAuth administration CLI with service ownership checks.
+- a metadata-only OAuth administration CLI with service ownership checks;
+- MCP 2.x Streamable HTTP application composition;
+- five isolated service factories and runnable CLI entry points;
+- public minimal health and protected readiness endpoints;
+- fail-closed per-service audit logging and startup validation;
+- exact trusted-proxy allowlists without wildcard forwarding trust.
 
-All five service entry points are placeholders and exit with a message that the service is not built. The OAuth administration entry point is operational. The HTTP/MCP transport, Google API integration, service tools, and deployment configuration are not implemented yet.
+All five service entry points run local MCP applications with empty tool registries. The OAuth administration entry point is operational. Google API integration, service tools, deployment configuration, and production credentials are not implemented yet.
 
 ## Planned services
 
@@ -45,7 +50,7 @@ The design uses two independent layers:
 
 **Service to Google.** Each service uses separate Google credentials and the minimum required OAuth scopes. Google refresh tokens are never returned to MCP clients.
 
-The state core, OAuth-only bearer middleware, and OAuth endpoint routes for the first layer exist today. Service composition and the second authorization layer are not implemented.
+The downstream state core, OAuth-only bearer middleware, OAuth endpoint routes, transport composition, and five isolated service factories exist today. The Google authorization layer and service tools are not implemented.
 
 ## Technology
 
@@ -104,7 +109,10 @@ The `--no-sync` flag is required when checking the installed dependency version.
 | `src/google_workspace_mcp/auth/context.py` | request-scoped authenticated principal metadata |
 | `src/google_workspace_mcp/auth/oauth.py` | OAuth metadata, authorization, token, and registration routes |
 | `src/google_workspace_mcp/common/config.py` | immutable per-service environment configuration |
-| `src/google_workspace_mcp/cli/` | five placeholder service entry points and the OAuth administration CLI |
+| `src/google_workspace_mcp/audit/` | fail-closed per-service audit logging |
+| `src/google_workspace_mcp/transport/` | MCP policy, Streamable HTTP composition, and shared factory |
+| `src/google_workspace_mcp/services/` | five thin isolated service factories |
+| `src/google_workspace_mcp/cli/` | five runnable service entry points, shared runner, and OAuth administration |
 | `tests/core/` | OAuth core and package entry point regressions |
 | `pyproject.toml` | package metadata, dependencies, and tool configuration |
 | `NOTICE` | provenance of adapted code |
@@ -121,7 +129,7 @@ The downstream OAuth 2.1 core is based on revision `7e6a52d791a50e3bd533df106021
 
 The original project's Obsidian storage and Git synchronization functionality was not copied.
 
-This project uses `mcp>=2,<3`. The `mcp.server.fastmcp` package removed in MCP 2.0 is not required; future composition will use `mcp.server.mcpserver`.
+This project uses `mcp>=2,<3` and composes remote applications with `mcp.server.mcpserver.MCPServer`; the removed `mcp.server.fastmcp` package is not required.
 
 ## Author
 

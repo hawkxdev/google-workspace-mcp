@@ -9,6 +9,7 @@ dependencies = [
     # MCP Python SDK.
     'mcp>=2,<3',
     'starlette>=1.6,<2',
+    'uvicorn>=0.52,<0.53',
     'google-auth>=2.56,<3',
     'google-auth-oauthlib>=1.4,<2',
     'google-api-python-client>=2.198,<3',

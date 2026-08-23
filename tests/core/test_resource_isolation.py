@@ -37,6 +37,9 @@ def service_config(state_dir: Path) -> ServiceConfig:
         download_path=download_path,
         oauth_state_path=state_dir / 'oauth.sqlite3',
         google_token_path=state_dir / 'google-token.json',
+        audit_log_path=state_dir / 'audit.jsonl',
+        oauth_login_username='admin',
+        oauth_login_password='test-password',
         allowed_hosts=('mcp.example.test',),
         forwarded_allow_ips=('127.0.0.1',),
         legacy_clients_path=None,
@@ -128,6 +131,9 @@ def test_service_states_use_distinct_paths_and_records(
         monkeypatch.delenv(f'{prefix}_MCP_DOWNLOAD_PATH', raising=False)
         monkeypatch.delenv(f'{prefix}_OAUTH_STATE_PATH', raising=False)
         monkeypatch.delenv(f'{prefix}_GOOGLE_TOKEN_PATH', raising=False)
+        monkeypatch.delenv(f'{prefix}_AUDIT_LOG_PATH', raising=False)
+        monkeypatch.setenv(f'{prefix}_OAUTH_LOGIN_USERNAME', 'admin')
+        monkeypatch.setenv(f'{prefix}_OAUTH_LOGIN_PASSWORD', 'test-password')
 
     configs = {
         service: ServiceConfig.from_env(service) for service in SERVICES

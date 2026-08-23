@@ -1,12 +1,9 @@
-"""Entrypoint contract tests."""
-
 import importlib
+from unittest.mock import MagicMock
 
 import pytest
 
 from google_workspace_mcp.cli import SERVICES
-
-# Service entrypoint cases
 
 
 def test_five_services_are_declared() -> None:
@@ -14,23 +11,23 @@ def test_five_services_are_declared() -> None:
 
 
 @pytest.mark.parametrize('service', SERVICES)
-def test_entrypoint_module_exposes_callable_main(service: str) -> None:
+def test_entrypoint_module_exposes_callables(service: str) -> None:
     module = importlib.import_module(f'google_workspace_mcp.cli.{service}')
     assert service == module.SERVICE_NAME
     assert callable(module.main)
+    assert callable(module.run_server)
 
 
 @pytest.mark.parametrize('service', SERVICES)
-def test_entrypoint_reports_unavailable_runtime(service: str) -> None:
+def test_entrypoint_main_invokes_run_server(
+    monkeypatch: pytest.MonkeyPatch,
+    service: str,
+) -> None:
     module = importlib.import_module(f'google_workspace_mcp.cli.{service}')
-    with pytest.raises(
-        SystemExit,
-        match=rf'^{service}: service runtime is not implemented$',
-    ):
-        module.main()
-
-
-# SDK compatibility cases
+    mock_run_server = MagicMock()
+    monkeypatch.setattr(module, 'run_server', mock_run_server)
+    module.main()
+    mock_run_server.assert_called_once_with()
 
 
 def test_sdk_server_contract_is_present() -> None:
