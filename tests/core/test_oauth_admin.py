@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import sqlite3
 from io import StringIO
 from pathlib import Path
@@ -227,8 +228,10 @@ def test_backup_is_online_reopenable_and_secret_free(
     assert registered.client_secret.encode() not in backup_bytes
     assert authorization_code.encode() not in backup_bytes
     assert issued.access_token.encode() not in backup_bytes
+    assert issued.access_token.split('.')[-1].encode() not in backup_bytes
     assert issued.refresh_token is not None
     assert issued.refresh_token.encode() not in backup_bytes
+    assert issued.refresh_token.split('.')[-1].encode() not in backup_bytes
 
 
 def test_metadata_command_does_not_consume_pending_legacy_migration(
@@ -265,6 +268,257 @@ def test_metadata_command_does_not_consume_pending_legacy_migration(
         assert connection.execute(
             'SELECT count(*) FROM migration_metadata'
         ).fetchone() == (0,)
+
+
+def test_all_cli_overrides_reach_state_construction(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _configure_service(monkeypatch, tmp_path, 'gmail')
+    state_path = tmp_path / 'override' / 'oauth.sqlite3'
+    download_path = tmp_path / 'override-downloads'
+    legacy_path = tmp_path / 'override-legacy.json'
+    args = oauth_admin._parser().parse_args(
+        [
+            '--service',
+            'gmail',
+            '--state-path',
+            str(state_path),
+            '--download-path',
+            str(download_path),
+            '--legacy-path',
+            str(legacy_path),
+            '--approved-legacy-client-id',
+            'legacy-a',
+            '--approved-legacy-client-id',
+            'legacy-b',
+            '--access-token-ttl-seconds',
+            '123',
+            '--refresh-token-ttl-seconds',
+            '456',
+            'clients',
+            'list',
+        ]
+    )
+
+    with oauth_admin._state_from_args(args) as state:
+        assert state.path == state_path.absolute()
+        assert state.download_path == download_path.absolute()
+        assert state.legacy_path == legacy_path.absolute()
+        assert state.approved_legacy_client_ids == frozenset(
+            {'legacy-a', 'legacy-b'}
+        )
+        assert state.access_token_ttl_seconds == 123
+        assert state.refresh_token_ttl_seconds == 456
+
+
+@pytest.mark.parametrize('kind', ['fifo', 'symlink'])
+def test_unsafe_state_target_is_rejected_before_sqlite_open(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, kind: str
+) -> None:
+    config = _configure_service(monkeypatch, tmp_path, 'gmail')
+    config.oauth_state_path.parent.mkdir(mode=0o700, parents=True)
+    if kind == 'fifo':
+        os.mkfifo(config.oauth_state_path, 0o600)
+    else:
+        target = tmp_path / 'owned.sqlite3'
+        target_config = _configure_service(
+            monkeypatch, tmp_path, 'drive', state_path=target
+        )
+        with _state(target_config):
+            pass
+        config.oauth_state_path.symlink_to(target)
+
+    sqlite_opened = False
+
+    def forbidden_connect(*args: object, **kwargs: object) -> None:
+        """Reject unexpected SQLite open."""
+        nonlocal sqlite_opened
+        sqlite_opened = True
+        raise AssertionError('SQLite opened unsafe state target')
+
+    monkeypatch.setattr(oauth_admin.sqlite3, 'connect', forbidden_connect)
+    result, stdout, stderr = _run('gmail', 'clients', 'list')
+
+    assert result == 1
+    assert stdout == ''
+    assert 'unsafe OAuth state' in stderr
+    assert not sqlite_opened
+
+
+def test_owner_mismatch_with_incomplete_sidecars_creates_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    drive = _configure_service(monkeypatch, tmp_path, 'drive')
+    with _state(drive):
+        pass
+    _configure_service(
+        monkeypatch, tmp_path, 'gmail', state_path=drive.oauth_state_path
+    )
+    wal_path = Path(f'{drive.oauth_state_path}-wal')
+    shm_path = Path(f'{drive.oauth_state_path}-shm')
+    wal_path.write_bytes(b'')
+    wal_path.chmod(0o600)
+    if shm_path.exists():
+        shm_path.unlink()
+    wal_bytes = wal_path.read_bytes()
+
+    result, stdout, stderr = _run('gmail', 'clients', 'list')
+
+    assert result == 1
+    assert stdout == ''
+    assert json.loads(stderr) == {'error': 'OAuth state owner mismatch'}
+    assert wal_path.read_bytes() == wal_bytes
+    assert not shm_path.exists()
+
+
+def test_owner_mismatch_does_not_leave_new_sidecars(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    drive = _configure_service(monkeypatch, tmp_path, 'drive')
+    with _state(drive):
+        pass
+    _configure_service(
+        monkeypatch, tmp_path, 'gmail', state_path=drive.oauth_state_path
+    )
+    sidecars = tuple(
+        Path(f'{drive.oauth_state_path}{suffix}')
+        for suffix in ('-wal', '-shm')
+    )
+    assert not any(path.exists() for path in sidecars)
+
+    result, stdout, stderr = _run('gmail', 'clients', 'list')
+
+    assert result == 1
+    assert stdout == ''
+    assert json.loads(stderr) == {'error': 'OAuth state owner mismatch'}
+    assert not any(path.exists() for path in sidecars)
+
+
+def test_owner_mismatch_preserves_existing_sidecars(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    drive = _configure_service(monkeypatch, tmp_path, 'drive')
+    _configure_service(
+        monkeypatch, tmp_path, 'gmail', state_path=drive.oauth_state_path
+    )
+    with _state(drive) as live_state:
+        live_state.register_client([REDIRECT])
+        sidecars = tuple(
+            Path(f'{drive.oauth_state_path}{suffix}')
+            for suffix in ('-wal', '-shm')
+        )
+        before = {path: path.read_bytes() for path in sidecars}
+
+        result, stdout, stderr = _run('gmail', 'clients', 'list')
+
+        assert result == 1
+        assert stdout == ''
+        assert json.loads(stderr) == {'error': 'OAuth state owner mismatch'}
+        assert {path: path.read_bytes() for path in sidecars} == before
+
+
+def test_path_replacement_is_refused_before_schema_writes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = _configure_service(monkeypatch, tmp_path, 'gmail')
+    with _state(config):
+        pass
+    replacement = tmp_path / 'replacement.sqlite3'
+    with sqlite3.connect(replacement):
+        pass
+    replacement.chmod(0o600)
+    replacement_bytes = replacement.read_bytes()
+    original_validate = OAuthState._validate_state_targets
+
+    def replace_after_validation(
+        state: OAuthState,
+    ) -> tuple[int, int] | None:
+        """Replace validated state target."""
+        identity = original_validate(state)
+        os.replace(replacement, state.path)
+        return identity
+
+    monkeypatch.setattr(
+        OAuthState, '_validate_state_targets', replace_after_validation
+    )
+    result, stdout, stderr = _run('gmail', 'clients', 'list')
+
+    assert result == 1
+    assert stdout == ''
+    assert json.loads(stderr) == {'error': 'unsafe OAuth state'}
+    assert config.oauth_state_path.read_bytes() == replacement_bytes
+    assert not Path(f'{config.oauth_state_path}-wal').exists()
+    assert not Path(f'{config.oauth_state_path}-shm').exists()
+
+
+def test_empty_owner_row_is_refused_without_writes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = _configure_service(monkeypatch, tmp_path, 'docs')
+    with _state(config):
+        pass
+    with sqlite3.connect(config.oauth_state_path) as connection:
+        connection.execute('DELETE FROM state_owner')
+    original_bytes = config.oauth_state_path.read_bytes()
+
+    result, stdout, stderr = _run('docs', 'clients', 'list')
+
+    assert result == 1
+    assert stdout == ''
+    assert 'owner metadata' in stderr
+    assert config.oauth_state_path.read_bytes() == original_bytes
+
+
+def test_owner_mismatch_does_not_reflect_persisted_values(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = _configure_service(monkeypatch, tmp_path, 'gmail')
+    credential = 'v1.token-id.ACCESS-TOKEN-SECRET'
+    with _state(config):
+        pass
+    with sqlite3.connect(config.oauth_state_path) as connection:
+        connection.execute(
+            'UPDATE state_owner SET service_id = ? WHERE id = 1',
+            (credential,),
+        )
+
+    result, stdout, stderr = _run('gmail', 'clients', 'list')
+
+    assert result == 1
+    assert stdout == ''
+    assert credential not in stderr
+    assert json.loads(stderr) == {'error': 'OAuth state owner mismatch'}
+
+
+def test_connected_owner_recheck_detects_same_inode_change(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = _configure_service(monkeypatch, tmp_path, 'gmail')
+    with _state(config):
+        pass
+    original_preflight = OAuthState._preflight_existing_state_owner
+
+    def change_owner_after_preflight(
+        state: OAuthState, expected_identity: tuple[int, int]
+    ) -> None:
+        """Change owner after immutable read."""
+        original_preflight(state, expected_identity)
+        with sqlite3.connect(state.path) as connection:
+            connection.execute(
+                'UPDATE state_owner SET service_id = ? WHERE id = 1',
+                ('drive',),
+            )
+
+    monkeypatch.setattr(
+        OAuthState,
+        '_preflight_existing_state_owner',
+        change_owner_after_preflight,
+    )
+    result, stdout, stderr = _run('gmail', 'clients', 'list')
+
+    assert result == 1
+    assert stdout == ''
+    assert json.loads(stderr) == {'error': 'OAuth state owner mismatch'}
 
 
 def test_existing_ownerless_state_is_refused_without_writes(
@@ -340,7 +594,7 @@ def test_swapped_service_path_is_refused_without_writes(
 
     assert result == 1
     assert stdout == ''
-    assert 'state belongs to service drive' in stderr
+    assert json.loads(stderr) == {'error': 'OAuth state owner mismatch'}
     with _state(gmail) as fresh_gmail:
         assert fresh_gmail.list_clients() == (gmail_client,)
     with _state(drive) as fresh_drive:

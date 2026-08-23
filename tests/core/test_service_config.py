@@ -146,12 +146,21 @@ class TestValidConfiguration:
 
         assert ServiceConfig.from_env('gmail').forwarded_allow_ips == ()
 
-    def test_state_and_token_paths_are_distinct_per_service(self) -> None:
+    def test_path_resource_trailing_slash_is_preserved(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        resource = 'https://mcp.example.test/gmail/mcp/'
+        monkeypatch.setenv('GMAIL_MCP_PUBLIC_URL', resource)
+
+        assert ServiceConfig.from_env('gmail').public_url == resource
+
+    def test_service_paths_are_distinct_per_service(self) -> None:
         configs = [
             ServiceConfig.from_env(service) for service in SERVICES_AND_PORTS
         ]
         assert len({config.oauth_state_path for config in configs}) == 5
         assert len({config.google_token_path for config in configs}) == 5
+        assert len({config.download_path for config in configs}) == 5
 
     @pytest.mark.parametrize(
         'state_suffix, token_suffix',

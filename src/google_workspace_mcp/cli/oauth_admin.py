@@ -15,7 +15,6 @@ from google_workspace_mcp.auth.state import (
     OAuthStateError,
     TokenMetadata,
     UnsafeStatePath,
-    canonicalize_resource,
 )
 from google_workspace_mcp.cli import SERVICES
 from google_workspace_mcp.common.config import ServiceConfig
@@ -103,48 +102,10 @@ def _emit(stream: TextIO, payload: object) -> None:
     stream.write('\n')
 
 
-def _assert_existing_state_owner(
-    path: Path, service_id: str, resource: str
-) -> None:
-    """Preflight persisted state ownership."""
-    state_path = path.expanduser().absolute()
-    if not state_path.exists():
-        return
-    uri = f'{state_path.as_uri()}?mode=ro'
-    with sqlite3.connect(uri, uri=True) as connection:
-        owner_table = connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' "
-            "AND name = 'state_owner'"
-        ).fetchone()
-        if owner_table is None:
-            raise UnsafeStatePath('existing OAuth state has no owner metadata')
-        row = connection.execute(
-            'SELECT service_id, resource FROM state_owner WHERE id = 1'
-        ).fetchone()
-    if row is None:
-        raise UnsafeStatePath('existing OAuth state has no owner metadata')
-    stored_service = str(row[0])
-    stored_resource = str(row[1])
-    if stored_service != service_id:
-        raise UnsafeStatePath(
-            f'state belongs to service {stored_service}, '
-            f'opened as {service_id}'
-        )
-    expected_resource = canonicalize_resource(resource)
-    if stored_resource != expected_resource:
-        raise UnsafeStatePath(
-            f'state is bound to resource {stored_resource}, '
-            f'opened as {expected_resource}'
-        )
-
-
 def _state_from_args(args: argparse.Namespace) -> OAuthState:
     """Open selected service state."""
     config = ServiceConfig.from_env(args.service)
     state_path = args.state_path or config.oauth_state_path
-    _assert_existing_state_owner(
-        state_path, config.service_id, config.public_url
-    )
     approved_legacy_client_ids = (
         config.approved_legacy_client_ids
         if args.approved_legacy_client_ids is None
@@ -218,6 +179,21 @@ def main(
             _emit(output, {'backup': str(destination)})
             return 0
         raise AssertionError('unhandled OAuth admin command')
+    except UnsafeStatePath as exc:
+        message = str(exc)
+        safe_messages = {
+            'OAuth state owner mismatch',
+            'existing OAuth state has no owner metadata',
+        }
+        _emit(
+            errors,
+            {
+                'error': message
+                if message in safe_messages
+                else 'unsafe OAuth state'
+            },
+        )
+        return 1
     except (OSError, ValueError, OAuthStateError, sqlite3.Error) as exc:
         _emit(errors, {'error': str(exc)})
         return 1

@@ -118,7 +118,7 @@ class ServiceConfig:
         host = _required_string(env, host_key, '127.0.0.1')
         public_url = _required_string(
             env, public_url_key, f'http://127.0.0.1:{port}'
-        ).rstrip('/')
+        )
         mcp_path = _required_string(env, mcp_path_key, f'/{service}/mcp')
         state_dir = (_STATE_ROOT / service).expanduser()
         download_key = f'{prefix}_MCP_DOWNLOAD_PATH'

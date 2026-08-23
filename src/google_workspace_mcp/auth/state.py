@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import fcntl
 import hashlib
 import hmac
 import json
@@ -23,6 +24,7 @@ SCHEMA_VERSION = 2
 AUTHORIZATION_CODE_TTL_SECONDS = 300
 MAX_ACCESS_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
 MAX_REFRESH_TOKEN_TTL_SECONDS = 90 * 24 * 60 * 60
+_STATE_INITIALIZATION_LOCK = threading.Lock()
 
 MCP_READONLY_V1 = 'mcp_readonly_v1'
 LEGACY_FULL = 'legacy_full'
@@ -269,25 +271,35 @@ class OAuthState:
         # 3. Open state database
         self._assert_outside_downloads(self.path)
         self._prepare_secure_directory(self.path.parent)
-        self._validate_state_targets()
-        self._create_database_file()
-        self._connection = sqlite3.connect(
-            self.path,
-            timeout=30,
-            isolation_level=None,
-            check_same_thread=False,
-        )
-        self._connection.row_factory = sqlite3.Row
-        # 4. Initialize state schema
-        try:
-            self._configure_connection()
-            self._initialize_schema()
-            self._assert_state_owner()
-            self._secure_state_files()
-        except BaseException:
-            self._connection.close()
-            self._closed = True
-            raise
+        self._validate_secure_file(self.path, allow_missing=True)
+        with self._state_initialization_lock():
+            validated_identity = self._validate_state_targets()
+            created = self._create_database_file()
+            expected_identity = (
+                validated_identity or self._state_file_identity()
+            )
+            if not created:
+                self._preflight_existing_state_owner(expected_identity)
+            self._connection = sqlite3.connect(
+                self.path,
+                timeout=30,
+                isolation_level=None,
+                check_same_thread=False,
+            )
+            self._connection.row_factory = sqlite3.Row
+            try:
+                self._assert_state_file_identity(expected_identity)
+                if created:
+                    self._initialize_schema(initialize_owner=True)
+                else:
+                    self._assert_connected_state_owner()
+                    self._initialize_schema(initialize_owner=False)
+                self._configure_connection()
+                self._secure_state_files()
+            except BaseException:
+                self._connection.close()
+                self._closed = True
+                raise
 
     def migrate_legacy(self) -> None:
         """Migrate legacy client data."""
@@ -1376,25 +1388,30 @@ class OAuthState:
             else:
                 self._connection.commit()
 
-    def _initialize_schema(self) -> None:
+    def _initialize_schema(self, *, initialize_owner: bool) -> None:
         """Prepare database schema."""
         with self._lock:
             version = int(
                 self._connection.execute('PRAGMA user_version').fetchone()[0]
             )
-            # === Schema upgrade handling ===
             if version > SCHEMA_VERSION:
                 raise OAuthStateError(
                     f'unsupported OAuth state schema version {version}'
                 )
-            script = (
-                'BEGIN IMMEDIATE;\n'
-                f'{_SCHEMA}\n'
-                f'PRAGMA user_version = {SCHEMA_VERSION};\n'
-                'COMMIT;\n'
-            )
+            script = f'BEGIN IMMEDIATE;\n{_SCHEMA}\n'
             try:
                 self._connection.executescript(script)
+                if initialize_owner:
+                    self._connection.execute(
+                        'INSERT INTO state_owner '
+                        '(id, service_id, resource, created_at) '
+                        'VALUES (1, ?, ?, ?)',
+                        (self.service_id, self.resource, self._clock()),
+                    )
+                self._connection.execute(
+                    f'PRAGMA user_version = {SCHEMA_VERSION}'
+                )
+                self._connection.commit()
             except BaseException:
                 self._connection.rollback()
                 raise
@@ -1421,23 +1438,65 @@ class OAuthState:
         ).fetchall()
         return tuple(str(row[0]) for row in rows)
 
-    def _validate_state_targets(self) -> None:
+    def _validate_state_targets(self) -> tuple[int, int] | None:
         """Validate state paths."""
         self._validate_secure_file(self.path, allow_missing=True)
-        for suffix in ('-wal', '-shm'):
-            self._validate_secure_file(
-                Path(f'{self.path}{suffix}'), allow_missing=True
-            )
+        identity = (
+            self._state_file_identity() if os.path.lexists(self.path) else None
+        )
+        sidecars = tuple(
+            Path(f'{self.path}{suffix}') for suffix in ('-wal', '-shm')
+        )
+        for sidecar in sidecars:
+            self._validate_secure_file(sidecar, allow_missing=True)
+        return identity
 
-    def _create_database_file(self) -> None:
-        """Create database file."""
+    def _state_file_identity(self) -> tuple[int, int]:
+        """Read state file identity."""
+        metadata = self.path.lstat()
+        return metadata.st_dev, metadata.st_ino
+
+    def _assert_state_file_identity(
+        self, expected_identity: tuple[int, int]
+    ) -> None:
+        """Verify stable file identity."""
+        if self._state_file_identity() != expected_identity:
+            raise UnsafeStatePath('OAuth state file changed during open')
+
+    @contextlib.contextmanager
+    def _state_initialization_lock(self) -> Iterator[None]:
+        """Lock state initialization."""
+        with _STATE_INITIALIZATION_LOCK:
+            lock_path = Path(f'{self.path}.init-lock')
+            if not os.path.lexists(lock_path):
+                try:
+                    self._create_secure_file(lock_path)
+                except FileExistsError:
+                    pass
+            self._validate_secure_file(lock_path, allow_missing=False)
+            flags = os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0)
+            descriptor = os.open(lock_path, flags)
+            locked = False
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX)
+                locked = True
+                yield
+            finally:
+                if locked:
+                    fcntl.flock(descriptor, fcntl.LOCK_UN)
+                os.close(descriptor)
+
+    def _create_database_file(self) -> bool:
+        """Create secure database file."""
+        created = False
         if not os.path.lexists(self.path):
             try:
                 self._create_secure_file(self.path)
+                created = True
             except FileExistsError:
-                # === Concurrent initialization handling ===
                 pass
         self._validate_secure_file(self.path, allow_missing=False)
+        return created
 
     @staticmethod
     def _fsync_directory(directory: Path) -> None:
@@ -1509,30 +1568,53 @@ class OAuthState:
                 f'state {kind} has unsafe mode {mode:o}: {path}'
             )
 
-    def _assert_state_owner(self) -> None:
-        """Verify state ownership."""
-        self._connection.execute(
-            'INSERT OR IGNORE INTO state_owner '
-            '(id, service_id, resource, created_at) VALUES (1, ?, ?, ?)',
-            (self.service_id, self.resource, self._clock()),
-        )
-        row = self._connection.execute(
-            'SELECT service_id, resource FROM state_owner WHERE id = 1'
-        ).fetchone()
+    def _preflight_existing_state_owner(
+        self, expected_identity: tuple[int, int]
+    ) -> None:
+        """Read owner without sidecars."""
+        self._assert_state_file_identity(expected_identity)
+        uri = f'{self.path.as_uri()}?mode=ro&immutable=1'
+        with sqlite3.connect(uri, uri=True) as connection:
+            owner_table = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                "AND name = 'state_owner'"
+            ).fetchone()
+            row = None
+            if owner_table is not None:
+                try:
+                    row = connection.execute(
+                        'SELECT service_id, resource FROM state_owner WHERE id = 1'
+                    ).fetchone()
+                except sqlite3.OperationalError as exc:
+                    if 'no such table' not in str(exc):
+                        raise
+        self._assert_state_file_identity(expected_identity)
         if row is None:
-            raise OAuthStateError('OAuth state owner initialization failed')
-        stored_service = str(row['service_id'])
-        stored_resource = str(row['resource'])
-        if stored_service != self.service_id:
-            raise UnsafeStatePath(
-                f'state belongs to service {stored_service}, '
-                f'opened as {self.service_id}'
-            )
-        if stored_resource != self.resource:
-            raise UnsafeStatePath(
-                f'state is bound to resource {stored_resource}, '
-                f'opened as {self.resource}'
-            )
+            raise UnsafeStatePath('existing OAuth state has no owner metadata')
+        self._validate_state_owner_values(str(row[0]), str(row[1]))
+
+    def _assert_connected_state_owner(self) -> None:
+        """Recheck connected state owner."""
+        try:
+            row = self._connection.execute(
+                'SELECT service_id, resource FROM state_owner WHERE id = 1'
+            ).fetchone()
+        except sqlite3.OperationalError as exc:
+            if 'no such table' not in str(exc):
+                raise
+            row = None
+        if row is None:
+            raise UnsafeStatePath('existing OAuth state has no owner metadata')
+        self._validate_state_owner_values(
+            str(row['service_id']), str(row['resource'])
+        )
+
+    def _validate_state_owner_values(
+        self, service_id: str, resource: str
+    ) -> None:
+        """Validate persisted owner values."""
+        if service_id != self.service_id or resource != self.resource:
+            raise UnsafeStatePath('OAuth state owner mismatch')
 
     def _assert_outside_downloads(self, path: Path) -> None:
         """Validate external path."""
