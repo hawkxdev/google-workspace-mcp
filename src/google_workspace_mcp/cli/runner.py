@@ -7,11 +7,11 @@ from collections.abc import Callable, Sequence
 import uvicorn
 from starlette.applications import Starlette
 
-from google_workspace_mcp.audit.logger import validate_audit_path
 from google_workspace_mcp.auth.state import OAuthState
 from google_workspace_mcp.common.config import ServiceConfig
 from google_workspace_mcp.transport.authorization import PolicyMCPServer
 from google_workspace_mcp.transport.extensions import Extension
+from google_workspace_mcp.transport.factory import validate_service_config
 
 
 def run_service_server(
@@ -25,9 +25,7 @@ def run_service_server(
 ) -> None:
     """Run service ASGI server."""
     cfg = ServiceConfig.from_env(service_name)
-    validate_audit_path(cfg.audit_log_path, cfg.download_path)
-    if any('*' in ip for ip in cfg.forwarded_allow_ips):
-        raise ValueError('wildcard forwarded_allow_ips is not allowed')
+    validate_service_config(cfg)
     app, _, state = factory(cfg, extensions)
     try:
         uvicorn.run(

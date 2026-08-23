@@ -33,6 +33,10 @@ class PolicyMCPServer(MCPServer):
         """Retrieve required tool capability."""
         return self._required_tool_capabilities.get(tool_name)
 
+    def registered_capabilities(self) -> tuple[str, ...]:
+        """List registered tool capabilities."""
+        return tuple(sorted(set(self._required_tool_capabilities.values())))
+
     def _tool_allowed(self, tool_name: str) -> bool:
         """Check tool permission status."""
         principal = current_principal()

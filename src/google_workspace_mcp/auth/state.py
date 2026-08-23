@@ -713,6 +713,7 @@ class OAuthState:
         refresh_token: str,
         client_id: str,
         resource: str,
+        audit_hook: Callable[[IssuedAccessToken], None] | None = None,
     ) -> IssuedAccessToken:
         """Redeem refresh token."""
         # 1. Parse refresh token
@@ -791,13 +792,17 @@ class OAuthState:
                     resource=resource,
                     now=now,
                 )
-                return IssuedAccessToken(
+                rotated = IssuedAccessToken(
                     access_token=issued.access_token,
                     token=issued.token,
                     refresh_token=raw_refresh,
                     refresh=refresh_metadata,
                 )
-        # 4. Revoke replay family
+                # 4. Record rotation audit
+                if audit_hook is not None:
+                    audit_hook(rotated)
+                return rotated
+        # 5. Revoke replay family
         except _RefreshReplay:
             pass
         with self._transaction() as connection:

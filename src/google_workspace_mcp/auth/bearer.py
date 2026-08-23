@@ -46,6 +46,22 @@ _AUTH_EXEMPT_PATHS = frozenset(
     }
 )
 
+
+def public_request_paths(resource: str) -> tuple[str, ...]:
+    """List unauthenticated request paths."""
+    scoped = (
+        protected_resource_metadata_url(resource),
+        authorization_server_metadata_url(resource),
+        *oauth_endpoint_urls(resource),
+    )
+    paths = {*_AUTH_EXEMPT_PATHS}
+    for url in scoped:
+        path = urlsplit(url).path
+        paths.add(path)
+        paths.add(unquote(path))
+    return tuple(sorted(paths))
+
+
 _BEARER_CREDENTIALS = re.compile(
     r'(?i:Bearer) +(?P<token>[A-Za-z0-9\-._~+/]+=*)\Z'
 )

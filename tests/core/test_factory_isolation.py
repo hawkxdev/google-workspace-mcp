@@ -355,23 +355,20 @@ def test_factory_closes_state_on_tool_registration_failure(
         def register_tools(self, registrar: ToolRegistrar) -> None:
             raise RuntimeError('tool registration boom')
 
-    closed_states: list[OAuthState] = []
-    original_close = OAuthState.close
+    created_states: list[OAuthState] = []
+    original_init = OAuthState.__init__
 
-    def spy_close(self: OAuthState) -> None:
-        closed_states.append(self)
-        original_close(self)
+    def spy_init(self: OAuthState, *args: object, **kwargs: object) -> None:
+        original_init(self, *args, **kwargs)  # type: ignore[arg-type]
+        created_states.append(self)
 
-    monkeypatch.setattr(OAuthState, 'close', spy_close)
+    monkeypatch.setattr(OAuthState, '__init__', spy_init)
 
     with pytest.raises(RuntimeError, match='tool registration boom'):
         create_service_app(config, extensions=[FailingExtension()])
 
-    assert len(closed_states) == 1
-    failed_state = closed_states[0]
-    assert failed_state._closed is True
-    with pytest.raises(sqlite3.ProgrammingError):
-        failed_state.table_names()
+    assert created_states == []
+    assert not config.oauth_state_path.exists()
 
 
 def test_factory_closes_state_on_build_app_failure(

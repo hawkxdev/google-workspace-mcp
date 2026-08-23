@@ -256,6 +256,7 @@ def test_forwarded_allow_ips_default_is_loopback_only(
     monkeypatch.delenv('GMAIL_MCP_FORWARDED_ALLOW_IPS', raising=False)
     monkeypatch.setenv('GMAIL_OAUTH_LOGIN_USERNAME', 'admin')
     monkeypatch.setenv('GMAIL_OAUTH_LOGIN_PASSWORD', 'test-password')
+    monkeypatch.setenv('GMAIL_MCP_PUBLIC_URL', RESOURCE)
 
     config = ServiceConfig.from_env('gmail')
     assert config.forwarded_allow_ips == ('127.0.0.1',)

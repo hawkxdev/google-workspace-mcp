@@ -49,6 +49,10 @@ def clear_service_config_environment(
         monkeypatch.setenv(
             f'{service.upper()}_OAUTH_LOGIN_PASSWORD', 'super-secret'
         )
+        monkeypatch.setenv(
+            f'{service.upper()}_MCP_PUBLIC_URL',
+            f'https://mcp.example.test/{service}/mcp',
+        )
 
 
 # Valid configuration cases
@@ -60,7 +64,7 @@ class TestValidConfiguration:
         state_dir = Path.home() / '.local/share/google-workspace-mcp/gmail'
 
         assert config.service_id == 'gmail'
-        assert config.public_url == 'http://127.0.0.1:8431'
+        assert config.public_url == 'https://mcp.example.test/gmail/mcp'
         assert config.mcp_path == '/gmail/mcp'
         assert config.host == '127.0.0.1'
         assert config.port == 8431
@@ -85,7 +89,7 @@ class TestValidConfiguration:
         config = ServiceConfig.from_env(service)
         assert config.service_id == service
         assert config.port == port
-        assert config.public_url == f'http://127.0.0.1:{port}'
+        assert config.public_url == f'https://mcp.example.test/{service}/mcp'
         assert config.mcp_path == f'/{service}/mcp'
 
     def test_all_environment_fields_override_defaults(

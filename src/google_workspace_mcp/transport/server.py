@@ -6,6 +6,7 @@ import logging
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.requests import Request
@@ -13,9 +14,12 @@ from starlette.responses import JSONResponse, Response
 from starlette.routing import BaseRoute, Match, Mount, Route, WebSocketRoute
 
 from google_workspace_mcp.audit.logger import AuditLogger
-from google_workspace_mcp.auth.bearer import BearerAuthMiddleware
+from google_workspace_mcp.auth.bearer import (
+    BearerAuthMiddleware,
+    public_request_paths,
+)
 from google_workspace_mcp.auth.oauth import OAuthEndpoints
-from google_workspace_mcp.auth.state import OAuthState
+from google_workspace_mcp.auth.state import OAuthState, canonicalize_resource
 from google_workspace_mcp.common.config import ServiceConfig
 from google_workspace_mcp.transport.authorization import PolicyMCPServer
 from google_workspace_mcp.transport.extensions import Extension
@@ -37,20 +41,25 @@ def _covers(route: BaseRoute, method: str, path: str) -> Match:
     return match
 
 
+_PROBED_METHODS = (
+    'GET',
+    'HEAD',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'OPTIONS',
+)
+
+
 def _validate_extension_routes(
     ext_routes: Sequence[BaseRoute],
     *,
     mcp_path: str,
+    resource: str,
 ) -> None:
     """Validate extension route safety."""
-    exempt_paths = (
-        '/health',
-        '/.well-known/oauth-authorization-server',
-        '/.well-known/oauth-protected-resource',
-        '/oauth/authorize',
-        '/oauth/token',
-        '/oauth/register',
-    )
+    exempt_paths = (*public_request_paths(resource), '/ready')
     exempt_method_paths = (
         (('GET', '/'), ('HEAD', '/')) if mcp_path != '/' else ()
     )
@@ -61,7 +70,9 @@ def _validate_extension_routes(
                 'an unauthenticated surface -- register plain HTTP Routes'
             )
         for p in exempt_paths:
-            if _covers(r, 'GET', p) is not Match.NONE:
+            if any(
+                _covers(r, m, p) is not Match.NONE for m in _PROBED_METHODS
+            ):
                 raise ValueError(
                     f'extension route {getattr(r, "path", r)!r} covers '
                     f'auth-exempt path {p!r}; it would be served without '
@@ -80,6 +91,30 @@ def _validate_extension_routes(
                 f'transport path {mcp_path!r}; it would bypass MCP '
                 'authorization'
             )
+
+
+_LOOPBACK_HOSTS = ('127.0.0.1:*', 'localhost:*', '[::1]:*')
+_LOOPBACK_ORIGINS = (
+    'http://127.0.0.1:*',
+    'http://localhost:*',
+    'http://[::1]:*',
+)
+
+
+def _transport_security(config: ServiceConfig) -> TransportSecuritySettings:
+    """Build transport security settings."""
+    hosts = [*_LOOPBACK_HOSTS]
+    origins = [*_LOOPBACK_ORIGINS]
+    for allowed in config.allowed_hosts:
+        hosts.append(allowed)
+        hosts.append(f'{allowed}:*')
+        origins.append(f'https://{allowed}')
+        origins.append(f'https://{allowed}:*')
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=hosts,
+        allowed_origins=origins,
+    )
 
 
 def build_app(
@@ -101,6 +136,7 @@ def build_app(
         streamable_http_path=config.mcp_path,
         stateless_http=True,
         json_response=True,
+        transport_security=_transport_security(config),
     )
 
     async def health(_: Request) -> JSONResponse:
@@ -163,6 +199,10 @@ def build_app(
     for ext in extensions_tuple:
         ext.register_routes(app)
     ext_routes = [r for r in app.routes if id(r) not in before_ids]
-    _validate_extension_routes(ext_routes, mcp_path=config.mcp_path)
+    _validate_extension_routes(
+        ext_routes,
+        mcp_path=config.mcp_path,
+        resource=canonicalize_resource(config.public_url),
+    )
 
     return app

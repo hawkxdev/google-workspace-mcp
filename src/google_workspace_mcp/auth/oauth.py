@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import unquote, urlsplit, urlunsplit
 
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import (
     HTMLResponse,
@@ -35,6 +36,8 @@ from .state import (
 )
 
 logger = logging.getLogger(__name__)
+
+MAX_CLIENT_ID_LENGTH = 256
 
 
 # URL helpers
@@ -491,6 +494,8 @@ class OAuthEndpoints:
                 'invalid_request',
                 'refresh_token, client_id, and resource are required',
             )
+        if len(client_id) > MAX_CLIENT_ID_LENGTH:
+            return _oauth_error('invalid_request', 'client_id is too long')
         if resource != self._canonical_resource:
             await self._audit_refresh_failure(client_id, 'invalid_target')
             return _oauth_error(
@@ -498,10 +503,11 @@ class OAuthEndpoints:
             )
         # Token rotation
         try:
-            issued = self._oauth_state.redeem_refresh_token(
-                refresh_token=refresh_token,
-                client_id=client_id,
-                resource=resource,
+            issued = await run_in_threadpool(
+                self._rotate_and_audit,
+                refresh_token,
+                client_id,
+                resource,
             )
         except InvalidClient:
             await self._audit_refresh_failure(client_id, 'invalid_client')
@@ -519,10 +525,20 @@ class OAuthEndpoints:
         except InvalidGrant:
             await self._audit_refresh_failure(client_id, 'invalid_grant')
             return _oauth_error('invalid_grant', 'refresh token is invalid')
-        await self._audit_refresh_rotation(issued)
         return _token_response(issued)
 
-    async def _audit_refresh_rotation(self, issued: IssuedAccessToken) -> None:
+    def _rotate_and_audit(
+        self, refresh_token: str, client_id: str, resource: str
+    ) -> IssuedAccessToken:
+        """Rotate tokens with audit."""
+        return self._oauth_state.redeem_refresh_token(
+            refresh_token=refresh_token,
+            client_id=client_id,
+            resource=resource,
+            audit_hook=self._audit_refresh_rotation,
+        )
+
+    def _audit_refresh_rotation(self, issued: IssuedAccessToken) -> None:
         """Record refresh rotation event."""
         token_id_hash = hashlib.sha256(
             issued.access_token.encode('utf-8')
@@ -536,7 +552,7 @@ class OAuthEndpoints:
             'auth_policy': issued.token.policy,
             'token_id_hash': token_id_hash,
         }
-        await self._write_audit(record)
+        self._audit_writer(record)
 
     async def _audit_refresh_failure(self, client_id: str, error: str) -> None:
         """Record refresh failure event."""

@@ -1,5 +1,6 @@
 """Shared service configuration."""
 
+import ipaddress
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -119,13 +120,28 @@ def _validate_mcp_path(path: str) -> None:
         )
 
 
-def _validate_forwarded_allow_ips(
+def _is_unbounded_proxy_entry(entry: str) -> bool:
+    """Detect unbounded proxy entry."""
+    if '*' in entry:
+        return True
+    candidate = entry.strip()
+    if not candidate:
+        return False
+    try:
+        network = ipaddress.ip_network(candidate, strict=False)
+    except ValueError:
+        return False
+    return network.prefixlen == 0 or network.network_address.is_unspecified
+
+
+def validate_forwarded_allow_ips(
     ips: tuple[str, ...], prefix: str
 ) -> tuple[str, ...]:
     """Validate forwarded IP list."""
-    if any('*' in ip for ip in ips):
+    if any(_is_unbounded_proxy_entry(ip) for ip in ips):
         raise ValueError(
-            f'{prefix}_MCP_FORWARDED_ALLOW_IPS must not contain wildcard'
+            f'{prefix}_MCP_FORWARDED_ALLOW_IPS must not contain a wildcard '
+            'or an unbounded network'
         )
     return ips
 
@@ -168,9 +184,13 @@ class ServiceConfig:
         public_url_key = f'{prefix}_MCP_PUBLIC_URL'
         mcp_path_key = f'{prefix}_MCP_PATH'
         host = _required_string(env, host_key, '127.0.0.1')
-        public_url = _required_string(
-            env, public_url_key, f'http://127.0.0.1:{port}'
-        )
+        public_url_val = env.get(public_url_key)
+        if public_url_val is None or not public_url_val.strip():
+            raise ValueError(
+                f'{public_url_key} must be set to the public HTTPS URL of '
+                'this service'
+            )
+        public_url = public_url_val.strip()
         mcp_path = _required_string(env, mcp_path_key, f'/{service}/mcp')
         _validate_mcp_path(mcp_path)
         state_dir = (_STATE_ROOT / service).expanduser()
@@ -190,6 +210,10 @@ class ServiceConfig:
         audit_path = _required_path(env, audit_key, state_dir / 'audit.jsonl')
         if os.path.abspath(state_path) == os.path.abspath(token_path):
             raise ValueError(f'{state_key} and {token_key} must differ')
+        if os.path.abspath(audit_path) == os.path.abspath(state_path):
+            raise ValueError(f'{audit_key} and {state_key} must differ')
+        if os.path.abspath(audit_path) == os.path.abspath(token_path):
+            raise ValueError(f'{audit_key} and {token_key} must differ')
         username_key = f'{prefix}_OAUTH_LOGIN_USERNAME'
         password_key = f'{prefix}_OAUTH_LOGIN_PASSWORD'
         username_val = env.get(username_key)
@@ -217,7 +241,7 @@ class ServiceConfig:
             oauth_login_password=password_val.strip(),
             allowed_hosts=_csv(env.get(f'{prefix}_MCP_ALLOWED_HOSTS')),
             forwarded_allow_ips=(
-                _validate_forwarded_allow_ips(
+                validate_forwarded_allow_ips(
                     _csv(env.get(f'{prefix}_MCP_FORWARDED_ALLOW_IPS'))
                     if f'{prefix}_MCP_FORWARDED_ALLOW_IPS' in env
                     else ('127.0.0.1',),

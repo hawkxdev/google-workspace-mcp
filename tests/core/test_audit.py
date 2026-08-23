@@ -22,6 +22,7 @@ def test_service_config_and_audit(
     safe = tmp_path / 'safe.jsonl'
     for k, v in {
         'GMAIL_AUDIT_LOG_PATH': str(safe),
+        'GMAIL_MCP_PUBLIC_URL': 'https://mcp.example.test/gmail/mcp',
         'GMAIL_OAUTH_LOGIN_USERNAME': 'admin',
         'GMAIL_OAUTH_LOGIN_PASSWORD': 'super-secret',
     }.items():

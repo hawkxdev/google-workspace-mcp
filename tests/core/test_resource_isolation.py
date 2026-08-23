@@ -134,6 +134,10 @@ def test_service_states_use_distinct_paths_and_records(
         monkeypatch.delenv(f'{prefix}_AUDIT_LOG_PATH', raising=False)
         monkeypatch.setenv(f'{prefix}_OAUTH_LOGIN_USERNAME', 'admin')
         monkeypatch.setenv(f'{prefix}_OAUTH_LOGIN_PASSWORD', 'test-password')
+        monkeypatch.setenv(
+            f'{prefix}_MCP_PUBLIC_URL',
+            f'https://mcp.example.test/{service}/mcp',
+        )
 
     configs = {
         service: ServiceConfig.from_env(service) for service in SERVICES

@@ -57,6 +57,14 @@ select = ['E', 'F', 'I', 'SIM', 'UP', 'S', 'G']
 [tool.ruff.lint.per-file-ignores]
 # Test security allowances.
 'tests/**/*.py' = ['S101', 'S105', 'S106']
+# Insecure permissions and addresses are the subject under test.
+'tests/core/test_hardening_regressions.py' = [
+    'S101',
+    'S103',
+    'S104',
+    'S105',
+    'S106',
+]
 # OAuth state allowances.
 'src/google_workspace_mcp/auth/state.py' = ['E501', 'SIM105', 'S101']
 
