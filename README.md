@@ -2,13 +2,13 @@
 
 A project for building five independent remote MCP servers for Google Workspace: Gmail, Google Calendar, Google Drive, Google Sheets, and Google Docs.
 
-> **Status: pre-alpha.** The MCP servers are not operational yet. The repository currently contains the package scaffold, five placeholder entry points, the downstream OAuth state core, OAuth-only bearer middleware, path-scoped OAuth routes, and immutable per-service configuration.
+> **Status: pre-alpha.** The MCP servers are not operational yet. The repository currently contains the package scaffold, five placeholder service entry points, the downstream OAuth state core, OAuth-only bearer middleware, path-scoped OAuth routes, a metadata-only OAuth administration CLI, and immutable per-service configuration.
 
 ## Current status
 
 Implemented:
 
-- a Python package with five console entry points;
+- a Python package with five service entry points and one OAuth administration entry point;
 - SQLite-backed downstream OAuth state;
 - OAuth client registration and PKCE;
 - token binding to a canonical `resource`;
@@ -18,9 +18,10 @@ Implemented:
 - OAuth-only bearer authentication with RFC 9728 challenges;
 - path-scoped OAuth metadata, authorization, token, and registration routes;
 - request-scoped, secret-free authenticated principal metadata;
-- fail-closed binding between service configuration and OAuth state ownership.
+- fail-closed binding between service configuration and OAuth state ownership;
+- a metadata-only OAuth administration CLI with service ownership checks.
 
-All five console entry points are placeholders and exit with a message that the service is not built. The HTTP/MCP transport, Google API integration, service tools, and deployment configuration are not implemented yet.
+All five service entry points are placeholders and exit with a message that the service is not built. The OAuth administration entry point is operational. The HTTP/MCP transport, Google API integration, service tools, and deployment configuration are not implemented yet.
 
 ## Planned services
 
@@ -73,6 +74,16 @@ uv sync --dev
 
 The virtual environment does not need to be activated. Run commands through `uv run`.
 
+## OAuth administration
+
+The metadata-only operator CLI lists and revokes clients or access tokens and creates online SQLite backups. Every command requires an explicit service and validates the persisted state owner before operating. Client secrets, authorization codes, and token values are never returned.
+
+```bash
+uv run --no-sync google-mcp-oauth --service gmail clients list
+```
+
+Each service uses its own `<SERVICE>_OAUTH_STATE_PATH` and `<SERVICE>_MCP_DOWNLOAD_PATH`. The download path is a security boundary: OAuth state and backups are rejected inside it.
+
 ## Checks
 
 ```bash
@@ -93,7 +104,7 @@ The `--no-sync` flag is required when checking the installed dependency version.
 | `src/google_workspace_mcp/auth/context.py` | request-scoped authenticated principal metadata |
 | `src/google_workspace_mcp/auth/oauth.py` | OAuth metadata, authorization, token, and registration routes |
 | `src/google_workspace_mcp/common/config.py` | immutable per-service environment configuration |
-| `src/google_workspace_mcp/cli/` | five placeholder entry points |
+| `src/google_workspace_mcp/cli/` | five placeholder service entry points and the OAuth administration CLI |
 | `tests/core/` | OAuth core and package entry point regressions |
 | `pyproject.toml` | package metadata, dependencies, and tool configuration |
 | `NOTICE` | provenance of adapted code |

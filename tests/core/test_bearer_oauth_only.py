@@ -46,6 +46,7 @@ def _service_config(state_dir: Path) -> ServiceConfig:
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,
+        download_path=state_dir / 'downloads',
         oauth_state_path=state_dir / 'oauth.sqlite3',
         google_token_path=state_dir / 'google-token.json',
         allowed_hosts=('mcp.example.test',),

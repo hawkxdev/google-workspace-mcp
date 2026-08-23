@@ -22,6 +22,7 @@ CONFIG_ENV_SUFFIXES = (
     'MCP_PATH',
     'MCP_HOST',
     'MCP_PORT',
+    'MCP_DOWNLOAD_PATH',
     'OAUTH_STATE_PATH',
     'GOOGLE_TOKEN_PATH',
     'MCP_ALLOWED_HOSTS',
@@ -56,6 +57,7 @@ class TestValidConfiguration:
         assert config.mcp_path == '/gmail/mcp'
         assert config.host == '127.0.0.1'
         assert config.port == 8431
+        assert config.download_path == state_dir / 'downloads'
         assert config.oauth_state_path == state_dir / 'oauth_state.sqlite3'
         assert config.google_token_path == state_dir / 'google_token.json'
         assert config.allowed_hosts == ()
@@ -83,6 +85,7 @@ class TestValidConfiguration:
             'GMAIL_MCP_PATH': '/custom/mcp',
             'GMAIL_MCP_HOST': '127.0.0.2',
             'GMAIL_MCP_PORT': '9001',
+            'GMAIL_MCP_DOWNLOAD_PATH': '/var/lib/mail/downloads',
             'GMAIL_OAUTH_STATE_PATH': '/var/lib/mail/oauth.json',
             'GMAIL_GOOGLE_TOKEN_PATH': '/var/lib/mail/token.json',
             'GMAIL_MCP_ALLOWED_HOSTS': (
@@ -104,6 +107,7 @@ class TestValidConfiguration:
         assert config.mcp_path == '/custom/mcp'
         assert config.host == '127.0.0.2'
         assert config.port == 9001
+        assert config.download_path == Path('/var/lib/mail/downloads')
         assert config.oauth_state_path == Path('/var/lib/mail/oauth.json')
         assert config.google_token_path == Path('/var/lib/mail/token.json')
         assert config.allowed_hosts == (
@@ -191,6 +195,7 @@ class TestInvalidConfiguration:
             'MCP_HOST',
             'MCP_PUBLIC_URL',
             'MCP_PATH',
+            'MCP_DOWNLOAD_PATH',
             'OAUTH_STATE_PATH',
             'GOOGLE_TOKEN_PATH',
         ],

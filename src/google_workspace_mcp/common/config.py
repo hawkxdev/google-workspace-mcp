@@ -93,6 +93,7 @@ class ServiceConfig:
     mcp_path: str
     host: str
     port: int
+    download_path: Path
     oauth_state_path: Path
     google_token_path: Path
     allowed_hosts: tuple[str, ...]
@@ -120,6 +121,10 @@ class ServiceConfig:
         ).rstrip('/')
         mcp_path = _required_string(env, mcp_path_key, f'/{service}/mcp')
         state_dir = (_STATE_ROOT / service).expanduser()
+        download_key = f'{prefix}_MCP_DOWNLOAD_PATH'
+        download_path = _required_path(
+            env, download_key, state_dir / 'downloads'
+        )
         state_key = f'{prefix}_OAUTH_STATE_PATH'
         token_key = f'{prefix}_GOOGLE_TOKEN_PATH'
         state_path = _required_path(
@@ -141,6 +146,7 @@ class ServiceConfig:
             mcp_path=mcp_path,
             host=host,
             port=port,
+            download_path=download_path,
             oauth_state_path=state_path,
             google_token_path=token_path,
             allowed_hosts=_csv(env.get(f'{prefix}_MCP_ALLOWED_HOSTS')),

@@ -23,6 +23,7 @@ google-mcp-calendar = 'google_workspace_mcp.cli.calendar:main'
 google-mcp-drive = 'google_workspace_mcp.cli.drive:main'
 google-mcp-sheets = 'google_workspace_mcp.cli.sheets:main'
 google-mcp-docs = 'google_workspace_mcp.cli.docs:main'
+google-mcp-oauth = 'google_workspace_mcp.cli.oauth_admin:main'
 
 [dependency-groups]
 dev = [

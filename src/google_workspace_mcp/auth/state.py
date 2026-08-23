@@ -1511,16 +1511,16 @@ class OAuthState:
 
     def _assert_state_owner(self) -> None:
         """Verify state ownership."""
+        self._connection.execute(
+            'INSERT OR IGNORE INTO state_owner '
+            '(id, service_id, resource, created_at) VALUES (1, ?, ?, ?)',
+            (self.service_id, self.resource, self._clock()),
+        )
         row = self._connection.execute(
             'SELECT service_id, resource FROM state_owner WHERE id = 1'
         ).fetchone()
         if row is None:
-            self._connection.execute(
-                'INSERT INTO state_owner (id, service_id, resource, created_at) '
-                'VALUES (1, ?, ?, ?)',
-                (self.service_id, self.resource, self._clock()),
-            )
-            return
+            raise OAuthStateError('OAuth state owner initialization failed')
         stored_service = str(row['service_id'])
         stored_resource = str(row['resource'])
         if stored_service != self.service_id:
