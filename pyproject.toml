@@ -67,6 +67,10 @@ select = ['E', 'F', 'I', 'SIM', 'UP', 'S', 'G']
 ]
 # OAuth state allowances.
 'src/google_workspace_mcp/auth/state.py' = ['E501', 'SIM105', 'S101']
+# Google token URI allowance.
+'src/google_workspace_mcp/google_auth/credentials.py' = ['S105']
+# Credential security test allowances.
+'tests/core/test_google_auth.py' = ['S103', 'S107', 'S603']
 
 [tool.ruff.lint.isort]
 known-first-party = ['google_workspace_mcp']
