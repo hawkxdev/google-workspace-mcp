@@ -79,6 +79,18 @@ uv sync --dev
 
 The virtual environment does not need to be activated. Run commands through `uv run`.
 
+## Configuration
+
+Every service reads its settings from environment variables prefixed with the service name, for example `GMAIL_` or `DRIVE_`.
+
+`<SERVICE>_MCP_PUBLIC_URL` is required and must be the absolute HTTPS URL the service is reachable at. There is no default: OAuth metadata, token audience binding, and the advertised endpoints are all derived from it.
+
+`<SERVICE>_MCP_ALLOWED_HOSTS` lists the public host names the transport accepts. Leave it unset for local development, where the transport stays reachable on loopback only. Behind a reverse proxy it must contain the public host, otherwise the proxied request is rejected before it reaches the application.
+
+`<SERVICE>_MCP_FORWARDED_ALLOW_IPS` is an exact list of trusted proxy addresses. Wildcards and unbounded networks such as `0.0.0.0/0` are rejected.
+
+`<SERVICE>_OAUTH_STATE_PATH`, `<SERVICE>_GOOGLE_TOKEN_PATH`, `<SERVICE>_AUDIT_LOG_PATH`, and `<SERVICE>_MCP_DOWNLOAD_PATH` must all differ from one another.
+
 ## OAuth administration
 
 The metadata-only operator CLI lists and revokes clients or access tokens and creates online SQLite backups. Every command requires an explicit service and validates the persisted state owner before operating. Client secrets, authorization codes, and token values are never returned.
