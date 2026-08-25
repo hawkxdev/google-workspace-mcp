@@ -12,6 +12,8 @@ from google_workspace_mcp.transport.authorization import PolicyMCPServer
 from google_workspace_mcp.transport.extensions import Extension
 from google_workspace_mcp.transport.factory import create_service_app
 
+from .extension import CalendarExtension
+
 
 def create_calendar_app(
     config: ServiceConfig | None = None,
@@ -19,4 +21,8 @@ def create_calendar_app(
 ) -> tuple[Starlette, PolicyMCPServer, OAuthState]:
     """Create Calendar application."""
     resolved_config = config or ServiceConfig.from_env('calendar')
-    return create_service_app(resolved_config, extensions=extensions)
+    calendar_extension = CalendarExtension(resolved_config)
+    return create_service_app(
+        resolved_config,
+        extensions=(calendar_extension, *extensions),
+    )
