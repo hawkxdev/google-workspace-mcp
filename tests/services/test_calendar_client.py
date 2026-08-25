@@ -11,7 +11,10 @@ from googleapiclient.errors import HttpError
 
 from google_workspace_mcp.google_auth import GoogleCredentials
 from google_workspace_mcp.services.calendar.client import CalendarGateway
-from google_workspace_mcp.services.calendar.errors import CalendarProviderError
+from google_workspace_mcp.services.calendar.errors import (
+    CalendarConflictError,
+    CalendarProviderError,
+)
 from google_workspace_mcp.services.calendar.schemas import SendUpdates
 
 
@@ -191,6 +194,7 @@ def test_calendar_list_and_event_search_use_native_retry() -> None:
         'singleEvents': True,
         'orderBy': 'startTime',
         'maxResults': 10,
+        'maxAttendees': 100,
         'timeZone': 'UTC',
     }
     assert all(
@@ -300,3 +304,150 @@ def test_calendar_provider_error_is_sanitized() -> None:
         )
     assert marker not in str(captured.value)
     assert str(captured.value) == 'Calendar request was forbidden'
+
+
+def test_freebusy_preserves_groups_and_missing_calendars() -> None:
+    service = FakeCalendarService()
+    service.availability.queue(
+        'query',
+        {
+            'timeMin': '2026-08-25T00:00:00Z',
+            'timeMax': '2026-08-26T00:00:00Z',
+            'calendars': {'primary': {'busy': []}},
+            'groups': {
+                'team': {
+                    'calendars': ['a@example.com', 'b@example.com'],
+                    'errors': [{'reason': 'groupTooBig'}],
+                }
+            },
+        },
+    )
+    gateway = CalendarGateway(FakeStore(), service_builder=lambda _: service)
+    result = gateway.get_freebusy(
+        ('primary', 'missing', 'team'),
+        '2026-08-25T00:00:00Z',
+        '2026-08-26T00:00:00Z',
+        'UTC',
+    )
+    assert [value.calendar_id for value in result.calendars] == [
+        'primary',
+        'missing',
+    ]
+    assert result.calendars[1].errors[0].reason == 'notFound'
+    assert result.groups[0].group_id == 'team'
+    assert result.groups[0].calendars == ('a@example.com', 'b@example.com')
+    assert result.groups[0].errors[0].reason == 'groupTooBig'
+
+
+def test_provider_rejects_non_string_text_and_reason() -> None:
+    service = FakeCalendarService()
+    event = _event()
+    event['summary'] = {'private': 'provider-secret-marker'}
+    service.event_values.queue('list', {'items': [event]})
+    gateway = CalendarGateway(FakeStore(), service_builder=lambda _: service)
+    with pytest.raises(CalendarProviderError, match='invalid response'):
+        gateway.search_events(
+            'primary',
+            '2026-08-25T00:00:00Z',
+            '2026-08-26T00:00:00Z',
+            '',
+            10,
+            None,
+            'UTC',
+        )
+
+    service.availability.queue(
+        'query',
+        {
+            'calendars': {
+                'primary': {
+                    'errors': [{'reason': {'private': 'provider-secret'}}]
+                }
+            }
+        },
+    )
+    with pytest.raises(CalendarProviderError, match='invalid response'):
+        gateway.get_freebusy(
+            ('primary',),
+            '2026-08-25T00:00:00Z',
+            '2026-08-26T00:00:00Z',
+            'UTC',
+        )
+
+
+def test_event_lists_limit_provider_attendees() -> None:
+    service = FakeCalendarService()
+    service.event_values.queue('list', {'items': [_event()]})
+    service.event_values.queue('instances', {'items': [_event()]})
+    gateway = CalendarGateway(FakeStore(), service_builder=lambda _: service)
+    gateway.search_events(
+        'primary',
+        '2026-08-25T00:00:00Z',
+        '2026-08-26T00:00:00Z',
+        '',
+        10,
+        None,
+        'UTC',
+    )
+    gateway.list_instances(
+        'primary',
+        'series-1',
+        '2026-08-25T00:00:00Z',
+        '2026-08-26T00:00:00Z',
+        10,
+        None,
+        'UTC',
+    )
+    assert service.event_values.calls[0][1]['maxAttendees'] == 100
+    assert service.event_values.calls[1][1]['maxAttendees'] == 100
+
+
+def test_oversized_opaque_values_fail_closed() -> None:
+    service = FakeCalendarService()
+    service.calendars.queue('list', {'nextPageToken': 'x' * 2_049})
+    gateway = CalendarGateway(FakeStore(), service_builder=lambda _: service)
+    with pytest.raises(CalendarProviderError, match='invalid response'):
+        gateway.list_calendars(10, None)
+
+
+def test_http_conflicts_distinguish_409_and_412() -> None:
+    service = FakeCalendarService()
+    for status, reason in ((409, 'duplicate'), (412, 'conditionNotMet')):
+        response = httplib2.Response({'status': str(status)})
+        error = HttpError(
+            response,
+            ('{"error":{"errors":[{"reason":"' + reason + '"}]}}').encode(),
+        )
+        service.event_values.queue('list', FakeRequest(error=error))
+    gateway = CalendarGateway(FakeStore(), service_builder=lambda _: service)
+    arguments = (
+        'primary',
+        '2026-08-25T00:00:00Z',
+        '2026-08-26T00:00:00Z',
+        '',
+        10,
+        None,
+        'UTC',
+    )
+    with pytest.raises(CalendarProviderError, match='conflict'):
+        gateway.search_events(*arguments)
+    with pytest.raises(CalendarConflictError, match='changed'):
+        gateway.search_events(*arguments)
+
+
+def test_instance_lookup_requires_matching_original_start() -> None:
+    service = FakeCalendarService()
+    target = '2026-09-01T10:00:00+00:00'
+    service.event_values.queue(
+        'instances',
+        {'items': [{'originalStartTime': {'dateTime': target}}]},
+    )
+    gateway = CalendarGateway(FakeStore(), service_builder=lambda _: service)
+    assert gateway.instance_exists('primary', 'series-1', target) is True
+    assert service.event_values.calls[0][1] == {
+        'calendarId': 'primary',
+        'eventId': 'series-1',
+        'originalStart': target,
+        'maxResults': 2,
+        'maxAttendees': 1,
+    }

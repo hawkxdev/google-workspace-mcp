@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from google_workspace_mcp.services.calendar.batch import CalendarBatchExecutor
 from google_workspace_mcp.services.calendar.errors import CalendarInputError
@@ -156,3 +157,83 @@ def test_batch_rejects_duplicate_and_future_operations() -> None:
                 ),
             )
         )
+
+
+@pytest.mark.parametrize(
+    'extra',
+    [
+        {
+            'attendees': [
+                {'email': 'a@example.com', 'responseStatus': 'accepted'}
+            ]
+        },
+        {
+            'reminders': {
+                'useDefault': False,
+                'overrides': [{'method': 'sms', 'minutes': -1}],
+            }
+        },
+        {'start': {'date': '2026-08-25', 'unexpected': True}},
+        {'recurrence': ['RRULE:' + 'X' * 10_000]},
+    ],
+)
+def test_batch_schema_rejects_unbounded_nested_fields(
+    extra: dict[str, object],
+) -> None:
+    body: dict[str, object] = {
+        'summary': 'Created',
+        'start': {'date': '2026-08-25'},
+        'end': {'date': '2026-08-26'},
+    }
+    body.update(extra)
+    with pytest.raises(ValidationError):
+        BatchOperation(
+            operation_id='create',
+            operation=BatchOperationType.CREATE,
+            calendar_id='primary',
+            body=body,
+        )
+
+
+def test_batch_marks_malformed_create_response_failed() -> None:
+    class MalformedEvents(FakeEvents):
+        """Return malformed create response."""
+
+        def insert(self, **kwargs: Any) -> FakeRequest:
+            """Build malformed insert request."""
+            del kwargs
+            return FakeRequest(None)
+
+    service = FakeService()
+    service.event_values = MalformedEvents()
+    operation = BatchOperation(
+        operation_id='create',
+        operation=BatchOperationType.CREATE,
+        calendar_id='primary',
+        body={
+            'summary': 'Created',
+            'start': {'date': '2026-08-25'},
+            'end': {'date': '2026-08-26'},
+        },
+    )
+    result = CalendarBatchExecutor(FakeGateway(service)).execute((operation,))
+    assert result.items[0].success is False
+    assert result.items[0].event_id is None
+
+
+def test_batch_rejects_operation_count_boundaries() -> None:
+    executor = CalendarBatchExecutor(FakeGateway(FakeService()))
+    with pytest.raises(CalendarInputError, match='count'):
+        executor.execute(())
+    operation = BatchOperation(
+        operation_id='create',
+        operation=BatchOperationType.CREATE,
+        calendar_id='primary',
+        body={
+            'summary': 'Created',
+            'start': {'date': '2026-08-25'},
+            'end': {'date': '2026-08-26'},
+        },
+    )
+    with pytest.raises(CalendarInputError, match='count'):
+        executor.execute((operation,) * 21)

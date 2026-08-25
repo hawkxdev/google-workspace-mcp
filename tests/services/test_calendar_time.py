@@ -10,11 +10,26 @@ from google_workspace_mcp.services.calendar.errors import CalendarInputError
 from google_workspace_mcp.services.calendar.schemas import ReminderOverride
 from google_workspace_mcp.services.calendar.time import (
     all_day_range,
+    normalize_search_window,
     normalize_time_range,
 )
 from google_workspace_mcp.services.calendar.tools.common import (
     build_event_body,
 )
+
+
+@pytest.mark.parametrize(
+    'value',
+    [
+        '2026-08-25 10:00:00+00:00',
+        '20260825T100000+0000',
+        '2026-W35-2T10:00:00+00:00',
+        '2026-08-25T10:00:00+00:00:30',
+    ],
+)
+def test_search_window_rejects_non_rfc3339_timestamps(value: str) -> None:
+    with pytest.raises(CalendarInputError, match='RFC3339'):
+        normalize_search_window(value, '2026-08-25T11:00:00Z')
 
 
 def test_timed_range_requires_offset_and_iana_zone() -> None:
@@ -27,7 +42,7 @@ def test_timed_range_requires_offset_and_iana_zone() -> None:
     assert normalized.end.date_time == '2026-11-01T02:30:00-05:00'
     assert normalized.start.time_zone == 'America/New_York'
 
-    with pytest.raises(CalendarInputError, match='offset-aware'):
+    with pytest.raises(CalendarInputError, match='RFC3339'):
         normalize_time_range(
             '2026-08-25T10:00:00',
             '2026-08-25T11:00:00',

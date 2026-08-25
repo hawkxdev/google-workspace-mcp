@@ -37,9 +37,12 @@ def test_split_recurrence_rejects_counted_rule() -> None:
 class FakeGateway:
     """Record recurring mutation operations."""
 
-    def __init__(self, fail_create: bool = False) -> None:
+    def __init__(
+        self, fail_create: bool = False, *, instance_exists: bool = True
+    ) -> None:
         """Initialize recurrence gateway fake."""
         self.fail_create = fail_create
+        self.instance_found = instance_exists
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
         self.resource = {
             'id': 'series-1',
@@ -62,6 +65,15 @@ class FakeGateway:
         """Return recurring provider resource."""
         self.calls.append(('get', (calendar_id, event_id)))
         return dict(self.resource)
+
+    def instance_exists(
+        self, calendar_id: str, event_id: str, occurrence_start: str
+    ) -> bool:
+        """Return target instance status."""
+        self.calls.append(
+            ('instance', (calendar_id, event_id, occurrence_start))
+        )
+        return self.instance_found
 
     def update_event(
         self,
@@ -103,11 +115,11 @@ def test_future_update_splits_series_and_reports_partial_failure() -> None:
     )
     assert result.original_series_updated is True
     assert result.new_series_created is True
-    assert gateway.calls[1][1][2]['recurrence'][0].endswith(
+    assert gateway.calls[2][1][2]['recurrence'][0].endswith(
         'UNTIL=20260901T095959Z'
     )
-    assert gateway.calls[2][1][1]['summary'] == 'Changed'
-    assert gateway.calls[2][1][1]['start']['dateTime'].startswith(
+    assert gateway.calls[3][1][1]['summary'] == 'Changed'
+    assert gateway.calls[3][1][1]['start']['dateTime'].startswith(
         '2026-09-01T10:00:00'
     )
 
@@ -123,3 +135,55 @@ def test_future_update_splits_series_and_reports_partial_failure() -> None:
     assert failed.original_series_updated is True
     assert failed.new_series_created is False
     assert failed.partial_error == 'Calendar following series creation failed'
+
+
+def test_future_update_validates_before_mutating_original() -> None:
+    gateway = FakeGateway()
+    with pytest.raises(CalendarInputError, match='start and end'):
+        RecurringEventMutator(gateway).update_future(
+            'primary',
+            'series-1',
+            '2026-09-01T10:00:00+00:00',
+            {'start': {'dateTime': '2026-09-01T11:00:00+00:00'}},
+            'etag-1',
+            SendUpdates.NONE,
+        )
+    assert [name for name, _ in gateway.calls] == ['get', 'instance']
+
+
+def test_future_update_requires_real_target_instance() -> None:
+    gateway = FakeGateway(instance_exists=False)
+    with pytest.raises(CalendarInputError, match='target instance'):
+        RecurringEventMutator(gateway).update_future(
+            'primary',
+            'series-1',
+            '2026-09-02T10:00:00+00:00',
+            {'summary': 'Changed'},
+            'etag-1',
+            SendUpdates.NONE,
+        )
+    assert [name for name, _ in gateway.calls] == ['get', 'instance']
+
+
+def test_future_split_rejects_additional_dates() -> None:
+    with pytest.raises(CalendarInputError, match='RDATE|EXDATE'):
+        split_recurrence(
+            (
+                'RRULE:FREQ=WEEKLY;BYDAY=TU',
+                'RDATE:20260908T100000Z',
+            ),
+            '2026-09-01T10:00:00Z',
+        )
+
+
+def test_future_update_preserves_requested_recurrence() -> None:
+    gateway = FakeGateway()
+    RecurringEventMutator(gateway).update_future(
+        'primary',
+        'series-1',
+        '2026-09-01T10:00:00+00:00',
+        {'recurrence': ['RRULE:FREQ=DAILY']},
+        'etag-1',
+        SendUpdates.NONE,
+    )
+    assert gateway.calls[3][1][1]['recurrence'] == ['RRULE:FREQ=DAILY']

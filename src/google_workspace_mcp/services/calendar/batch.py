@@ -36,7 +36,9 @@ def _validated_body(
     if operation.body is None:
         action = 'create' if create else 'update'
         raise CalendarInputError(f'{action} batch operation requires body')
-    body = dict(operation.body)
+    body = operation.body.model_dump(
+        mode='json', by_alias=True, exclude_none=True
+    )
     if not body or set(body).difference(_ALLOWED_EVENT_FIELDS):
         raise CalendarInputError('batch event body is invalid')
     if create and not {'summary', 'start', 'end'}.issubset(body):
@@ -170,13 +172,25 @@ class CalendarBatchExecutor:
                     deleted=True,
                 )
                 return
-            event_id = ''
-            if isinstance(response, dict):
-                event_id = str(response.get('id', ''))[:256]
+            if not isinstance(response, dict):
+                results[request_id] = BatchItemResult(
+                    operation_id=request_id,
+                    success=False,
+                    error='Calendar batch item failed',
+                )
+                return
+            event_id = response.get('id')
+            if not isinstance(event_id, str) or not event_id:
+                results[request_id] = BatchItemResult(
+                    operation_id=request_id,
+                    success=False,
+                    error='Calendar batch item failed',
+                )
+                return
             results[request_id] = BatchItemResult(
                 operation_id=request_id,
                 success=True,
-                event_id=event_id or operation.event_id,
+                event_id=event_id,
             )
 
         batch = service.new_batch_http_request(callback=callback)

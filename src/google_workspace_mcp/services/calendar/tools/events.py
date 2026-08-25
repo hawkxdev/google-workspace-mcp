@@ -10,6 +10,7 @@ from pydantic import Field
 from google_workspace_mcp.transport.authorization import ToolRegistrar
 
 from ..client import CalendarGateway
+from ..constants import MAX_ATTENDEES, MAX_RECURRENCE_LINES
 from ..errors import CalendarInputError
 from ..recurrence import RecurringEventMutator
 from ..schemas import (
@@ -19,6 +20,9 @@ from ..schemas import (
     SendUpdates,
 )
 from .common import build_event_body, run_gateway
+
+AttendeeInput = Annotated[str, Field(min_length=3, max_length=320)]
+RecurrenceInput = Annotated[str, Field(min_length=1, max_length=1_000)]
 
 
 def register_event_tools(
@@ -50,12 +54,17 @@ def register_event_tools(
         time_zone: Annotated[str | None, Field(max_length=128)] = None,
         start_date: Annotated[str | None, Field(max_length=10)] = None,
         end_date: Annotated[str | None, Field(max_length=10)] = None,
-        attendees: Annotated[list[str] | None, Field(max_length=100)] = None,
+        attendees: Annotated[
+            list[AttendeeInput] | None, Field(max_length=MAX_ATTENDEES)
+        ] = None,
         reminders_use_default: bool | None = None,
         reminder_overrides: Annotated[
             list[ReminderOverride] | None, Field(max_length=5)
         ] = None,
-        recurrence: Annotated[list[str] | None, Field(max_length=10)] = None,
+        recurrence: Annotated[
+            list[RecurrenceInput] | None,
+            Field(max_length=MAX_RECURRENCE_LINES),
+        ] = None,
         send_updates: SendUpdates = SendUpdates.NONE,
     ) -> EventMutationResult:
         """Create one Calendar event."""
@@ -84,7 +93,7 @@ def register_event_tools(
         description='Update one occurrence, series, or future events.',
         annotations=ToolAnnotations(
             read_only_hint=False,
-            destructive_hint=False,
+            destructive_hint=True,
             idempotent_hint=False,
             open_world_hint=True,
         ),
@@ -104,12 +113,17 @@ def register_event_tools(
         time_zone: Annotated[str | None, Field(max_length=128)] = None,
         start_date: Annotated[str | None, Field(max_length=10)] = None,
         end_date: Annotated[str | None, Field(max_length=10)] = None,
-        attendees: Annotated[list[str] | None, Field(max_length=100)] = None,
+        attendees: Annotated[
+            list[AttendeeInput] | None, Field(max_length=MAX_ATTENDEES)
+        ] = None,
         reminders_use_default: bool | None = None,
         reminder_overrides: Annotated[
             list[ReminderOverride] | None, Field(max_length=5)
         ] = None,
-        recurrence: Annotated[list[str] | None, Field(max_length=10)] = None,
+        recurrence: Annotated[
+            list[RecurrenceInput] | None,
+            Field(max_length=MAX_RECURRENCE_LINES),
+        ] = None,
         send_updates: SendUpdates = SendUpdates.NONE,
     ) -> EventMutationResult:
         """Update scoped Calendar event."""

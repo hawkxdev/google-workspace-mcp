@@ -45,6 +45,7 @@ from .schemas import (
     EventSummary,
     FreeBusyCalendar,
     FreeBusyError,
+    FreeBusyGroup,
     FreeBusyResponse,
     ReminderOverride,
     SendUpdates,
@@ -52,6 +53,20 @@ from .schemas import (
 from .time import normalize_search_window, validate_time_zone
 
 ServiceBuilder = Callable[[GoogleCredentials], Any]
+
+_SAFE_REASONS = frozenset(
+    {
+        'conditionNotMet',
+        'conflict',
+        'duplicate',
+        'groupTooBig',
+        'internalError',
+        'notFound',
+        'rateLimitExceeded',
+        'tooManyCalendarsRequested',
+        'userRateLimitExceeded',
+    }
+)
 
 
 def build_calendar_service(credentials: GoogleCredentials) -> Any:
@@ -82,8 +97,12 @@ def _sequence(value: Any, limit: int) -> Sequence[Any]:
 
 
 def _text(value: Any, limit: int = MAX_TEXT_CHARS) -> str:
-    """Normalize bounded Calendar text."""
-    return str(value or '')[:limit]
+    """Validate bounded Calendar text."""
+    if value is None:
+        return ''
+    if not isinstance(value, str) or len(value) > limit:
+        raise CalendarProviderError('Calendar returned an invalid response')
+    return value
 
 
 def _event_time(value: Any) -> EventDateTime | EventDate:
@@ -92,7 +111,7 @@ def _event_time(value: Any) -> EventDateTime | EventDate:
     date_time = data.get('dateTime')
     if isinstance(date_time, str):
         return EventDateTime(
-            date_time=date_time[:MAX_TEXT_CHARS],
+            date_time=_text(date_time),
             time_zone=_text(data.get('timeZone'), 128),
         )
     date_value = data.get('date')
@@ -106,8 +125,10 @@ def _event_time(value: Any) -> EventDateTime | EventDate:
 
 def _safe_reason(value: Any) -> str:
     """Normalize Calendar error reason."""
+    if value is None:
+        return 'unknown'
     reason = _text(value, 128)
-    return reason if reason else 'unknown'
+    return reason if reason in _SAFE_REASONS else 'unknown'
 
 
 def _reminder_method(value: Any) -> Literal['email', 'popup']:
@@ -164,9 +185,13 @@ class CalendarGateway:
         except HttpError as error:
             status = int(getattr(error.resp, 'status', 0))
             reason = self._http_reason(error)
-            if status in {409, 412}:
+            if status == 412:
                 raise CalendarConflictError(
                     'Calendar event changed since it was read'
+                ) from None
+            if status == 409:
+                raise CalendarProviderError(
+                    'Calendar request conflicts with existing data'
                 ) from None
             if status in {403, 429} and reason in {
                 'rateLimitExceeded',
@@ -324,6 +349,7 @@ class CalendarGateway:
             'singleEvents': True,
             'orderBy': 'startTime',
             'maxResults': page_size,
+            'maxAttendees': MAX_ATTENDEES,
             'timeZone': time_zone,
         }
         if page_token:
@@ -365,6 +391,27 @@ class CalendarGateway:
             )
         )
 
+    def instance_exists(
+        self, calendar_id: str, event_id: str, occurrence_start: str
+    ) -> bool:
+        """Check recurring target instance."""
+        service = self.service()
+        data = self.execute(
+            service.events().instances(
+                calendarId=calendar_id,
+                eventId=event_id,
+                originalStart=occurrence_start,
+                maxResults=2,
+                maxAttendees=1,
+            )
+        )
+        for value in _sequence(data.get('items') or (), 2):
+            original = _mapping(_mapping(value).get('originalStartTime'))
+            candidate = original.get('dateTime') or original.get('date')
+            if _text(candidate, 128) == occurrence_start:
+                return True
+        return False
+
     def list_instances(
         self,
         calendar_id: str,
@@ -387,6 +434,7 @@ class CalendarGateway:
             'timeMin': time_min,
             'timeMax': time_max,
             'maxResults': page_size,
+            'maxAttendees': MAX_ATTENDEES,
             'timeZone': time_zone,
         }
         if page_token:
@@ -425,10 +473,28 @@ class CalendarGateway:
             'items': [{'id': value} for value in calendar_ids],
         }
         data = self.execute(service.freebusy().query(body=body))
-        calendars = _mapping(data.get('calendars', {}))
+        calendars = _mapping(data.get('calendars') or {})
+        group_values = _mapping(data.get('groups') or {})
+        if len(calendars) > MAX_FREEBUSY_CALENDARS or len(group_values) > len(
+            calendar_ids
+        ):
+            raise CalendarProviderError(
+                'Calendar returned an invalid response'
+            )
         output: list[FreeBusyCalendar] = []
         for calendar_id in calendar_ids:
-            value = _mapping(calendars.get(calendar_id) or {})
+            if calendar_id in group_values:
+                continue
+            raw_value = calendars.get(calendar_id)
+            if raw_value is None:
+                output.append(
+                    FreeBusyCalendar(
+                        calendar_id=calendar_id,
+                        errors=(FreeBusyError(reason='notFound'),),
+                    )
+                )
+                continue
+            value = _mapping(raw_value)
             busy = tuple(
                 BusyPeriod(
                     start=_text(item.get('start'), 128),
@@ -448,23 +514,37 @@ class CalendarGateway:
             )
             output.append(
                 FreeBusyCalendar(
-                    calendar_id=calendar_id[:MAX_ID_CHARS],
+                    calendar_id=calendar_id,
                     busy=busy,
                     errors=errors,
                 )
             )
-        group_values = _mapping(data.get('groups') or {})
-        group_errors = tuple(
-            FreeBusyError(reason=_safe_reason(error.get('reason')))
-            for group in group_values.values()
-            for error in _sequence(_mapping(group).get('errors') or (), 10)
-            if isinstance(error, Mapping)
+        groups = tuple(
+            FreeBusyGroup(
+                group_id=_text(group_id, MAX_ID_CHARS),
+                calendars=tuple(
+                    _text(value, MAX_ID_CHARS)
+                    for value in _sequence(
+                        _mapping(group).get('calendars') or (), 100
+                    )
+                ),
+                errors=tuple(
+                    FreeBusyError(reason=_safe_reason(error.get('reason')))
+                    for error in (
+                        _mapping(value)
+                        for value in _sequence(
+                            _mapping(group).get('errors') or (), 10
+                        )
+                    )
+                ),
+            )
+            for group_id, group in group_values.items()
         )
         return FreeBusyResponse(
             time_min=_text(data.get('timeMin'), 128),
             time_max=_text(data.get('timeMax'), 128),
             calendars=tuple(output),
-            group_errors=group_errors,
+            groups=groups,
         )
 
     def create_event(

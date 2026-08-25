@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -9,9 +10,16 @@ from .constants import MAX_WINDOW_DAYS
 from .errors import CalendarInputError
 from .schemas import EventDate, EventDateTime, EventTimeRange
 
+_RFC3339_PATTERN = re.compile(
+    r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
+    r'(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$'
+)
+
 
 def _aware_datetime(value: str) -> datetime:
     """Parse offset aware timestamp."""
+    if _RFC3339_PATTERN.fullmatch(value) is None:
+        raise CalendarInputError('timestamp must be valid RFC3339')
     normalized = value[:-1] + '+00:00' if value.endswith('Z') else value
     try:
         parsed = datetime.fromisoformat(normalized)

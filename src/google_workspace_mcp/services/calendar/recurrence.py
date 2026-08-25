@@ -20,6 +20,12 @@ class RecurrenceGateway(Protocol):
         """Return raw event resource."""
         ...
 
+    def instance_exists(
+        self, calendar_id: str, event_id: str, occurrence_start: str
+    ) -> bool:
+        """Check target event instance."""
+        ...
+
     def update_event(
         self,
         calendar_id: str,
@@ -65,8 +71,18 @@ def split_recurrence(
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Split recurring Calendar rule."""
     rules = tuple(recurrence)
+    additional = tuple(
+        value
+        for value in rules
+        if value.partition(':')[0].partition(';')[0].upper()
+        in {'RDATE', 'EXDATE'}
+    )
+    if additional:
+        raise CalendarInputError(
+            'RDATE and EXDATE recurrence cannot be split safely'
+        )
     rrules = [value for value in rules if value.startswith('RRULE:')]
-    if len(rrules) != 1:
+    if len(rrules) != 1 or len(rules) != 1:
         raise CalendarInputError('one RRULE is required for future mutation')
     rule = rrules[0]
     if 'COUNT=' in rule.upper():
@@ -78,10 +94,7 @@ def split_recurrence(
         if value and not value.upper().startswith('UNTIL=')
     ]
     original_rule = f'RRULE:{";".join((*components, f"UNTIL={until}"))}'
-    original = tuple(
-        original_rule if value == rule else value for value in rules
-    )
-    return original, rules
+    return (original_rule,), rules
 
 
 def _shift_start_end(resource: dict[str, Any], occurrence_start: str) -> None:
@@ -171,9 +184,35 @@ class RecurringEventMutator:
             recurrence, str | bytes
         ):
             raise CalendarInputError('event is not a recurring series')
+        if not self._gateway.instance_exists(
+            calendar_id, series_id, occurrence_start
+        ):
+            raise CalendarInputError(
+                'future recurrence target instance not found'
+            )
         original_recurrence, following_recurrence = split_recurrence(
             tuple(str(value) for value in recurrence), occurrence_start
         )
+        following_body = _writable_resource(resource)
+        following_body.update(dict(changes))
+        custom_recurrence = changes.get('recurrence')
+        if custom_recurrence is None:
+            following_body['recurrence'] = list(following_recurrence)
+        elif not isinstance(custom_recurrence, Sequence) or isinstance(
+            custom_recurrence, str | bytes
+        ):
+            raise CalendarInputError('future recurrence rules are invalid')
+        else:
+            following_body['recurrence'] = [
+                str(value) for value in custom_recurrence
+            ]
+        changes_time = 'start' in changes or 'end' in changes
+        if changes_time and not {'start', 'end'}.issubset(changes):
+            raise CalendarInputError(
+                'future recurrence time change requires start and end'
+            )
+        if not changes_time:
+            _shift_start_end(following_body, occurrence_start)
         original_body['recurrence'] = list(original_recurrence)
         self._gateway.update_event(
             calendar_id,
@@ -182,16 +221,6 @@ class RecurringEventMutator:
             etag,
             send_updates,
         )
-        following_body = _writable_resource(resource)
-        following_body.update(dict(changes))
-        following_body['recurrence'] = list(following_recurrence)
-        changes_time = 'start' in changes or 'end' in changes
-        if changes_time and not {'start', 'end'}.issubset(changes):
-            raise CalendarInputError(
-                'future recurrence time change requires start and end'
-            )
-        if not changes_time:
-            _shift_start_end(following_body, occurrence_start)
         try:
             created = self._gateway.create_event(
                 calendar_id, following_body, send_updates
@@ -224,6 +253,12 @@ class RecurringEventMutator:
             recurrence, str | bytes
         ):
             raise CalendarInputError('event is not a recurring series')
+        if not self._gateway.instance_exists(
+            calendar_id, series_id, occurrence_start
+        ):
+            raise CalendarInputError(
+                'future recurrence target instance not found'
+            )
         original, _ = split_recurrence(
             tuple(str(value) for value in recurrence), occurrence_start
         )

@@ -36,14 +36,41 @@ async def test_readonly_principal_only_sees_calendar_reads() -> None:
     try:
         tools = await server.list_tools()
         assert {tool.name for tool in tools} == READONLY_TOOLS
-        with pytest.raises(ToolError, match='Forbidden'):
-            await server.call_tool(
-                'calendar_delete_event',
-                {
-                    'calendar_id': 'primary',
-                    'event_id': 'event-1',
-                    'etag': 'etag-1',
-                },
-            )
+        mutations = {
+            'calendar_create_event': {
+                'calendar_id': 'primary',
+                'summary': 'Created',
+                'start_date': '2026-08-25',
+                'end_date': '2026-08-26',
+            },
+            'calendar_update_event': {
+                'calendar_id': 'primary',
+                'event_id': 'event-1',
+                'etag': 'etag-1',
+                'summary': 'Changed',
+            },
+            'calendar_delete_event': {
+                'calendar_id': 'primary',
+                'event_id': 'event-1',
+                'etag': 'etag-1',
+            },
+            'calendar_batch_mutate_events': {
+                'operations': [
+                    {
+                        'operation_id': 'create',
+                        'operation': 'create',
+                        'calendar_id': 'primary',
+                        'body': {
+                            'summary': 'Created',
+                            'start': {'date': '2026-08-25'},
+                            'end': {'date': '2026-08-26'},
+                        },
+                    }
+                ]
+            },
+        }
+        for tool_name, arguments in mutations.items():
+            with pytest.raises(ToolError, match='Forbidden'):
+                await server.call_tool(tool_name, arguments)
     finally:
         context.reset_request_context(token)

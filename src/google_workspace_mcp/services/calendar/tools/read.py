@@ -15,6 +15,7 @@ from ..constants import (
     MAX_CALENDAR_PAGE_SIZE,
     MAX_EVENT_PAGE_SIZE,
     MAX_FREEBUSY_CALENDARS,
+    MAX_ID_CHARS,
 )
 from ..schemas import (
     CalendarListResponse,
@@ -23,6 +24,8 @@ from ..schemas import (
     FreeBusyResponse,
 )
 from .common import run_gateway
+
+CalendarIdInput = Annotated[str, Field(min_length=1, max_length=MAX_ID_CHARS)]
 
 
 def register_read_tools(
@@ -141,7 +144,8 @@ def register_read_tools(
     )
     async def calendar_get_freebusy(
         calendar_ids: Annotated[
-            list[str], Field(min_length=1, max_length=MAX_FREEBUSY_CALENDARS)
+            list[CalendarIdInput],
+            Field(min_length=1, max_length=MAX_FREEBUSY_CALENDARS),
         ],
         time_min: Annotated[str, Field(min_length=1, max_length=128)],
         time_max: Annotated[str, Field(min_length=1, max_length=128)],

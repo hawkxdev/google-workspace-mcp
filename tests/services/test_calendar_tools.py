@@ -82,6 +82,23 @@ async def test_registers_exact_calendar_inventory() -> None:
         'time_zone',
     }
     assert search.output_schema is not None
+    public = {tool.name: tool for tool in tools}
+    freebusy = public['calendar_get_freebusy'].input_schema['properties']
+    assert freebusy['calendar_ids']['items']['maxLength'] == 256
+    create = public['calendar_create_event'].input_schema['properties']
+    assert create['attendees']['anyOf'][0]['items']['maxLength'] == 320
+    assert create['recurrence']['anyOf'][0]['items']['maxLength'] == 1_000
+    batch_schema = public['calendar_batch_mutate_events'].input_schema
+    assert (
+        batch_schema['$defs']['BatchEventBody']['additionalProperties']
+        is False
+    )
+    assert (
+        batch_schema['$defs']['BatchOperation']['properties']['calendar_id'][
+            'maxLength'
+        ]
+        == 256
+    )
 
 
 def test_calendar_annotations_match_side_effects() -> None:
@@ -94,6 +111,9 @@ def test_calendar_annotations_match_side_effects() -> None:
     assert by_name['calendar_search_events'].annotations.read_only_hint is True
     assert (
         by_name['calendar_create_event'].annotations.destructive_hint is False
+    )
+    assert (
+        by_name['calendar_update_event'].annotations.destructive_hint is True
     )
     assert (
         by_name['calendar_update_event'].annotations.idempotent_hint is False

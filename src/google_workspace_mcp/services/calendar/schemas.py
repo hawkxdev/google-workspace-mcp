@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -149,13 +149,21 @@ class FreeBusyCalendar(CalendarModel):
     errors: tuple[FreeBusyError, ...] = ()
 
 
+class FreeBusyGroup(CalendarModel):
+    """Describe Calendar availability group."""
+
+    group_id: str
+    calendars: tuple[str, ...] = ()
+    errors: tuple[FreeBusyError, ...] = ()
+
+
 class FreeBusyResponse(CalendarModel):
     """Return Calendar availability results."""
 
     time_min: str
     time_max: str
     calendars: tuple[FreeBusyCalendar, ...] = ()
-    group_errors: tuple[FreeBusyError, ...] = ()
+    groups: tuple[FreeBusyGroup, ...] = ()
 
 
 class EventMutationResult(CalendarModel):
@@ -169,15 +177,69 @@ class EventMutationResult(CalendarModel):
     partial_error: str | None = None
 
 
+class BatchEventDateTime(CalendarModel):
+    """Validate batch timed boundary."""
+
+    date_time: str = Field(alias='dateTime', min_length=1, max_length=128)
+    time_zone: str = Field(alias='timeZone', min_length=1, max_length=128)
+
+
+class BatchEventDate(CalendarModel):
+    """Validate batch date boundary."""
+
+    date: str = Field(min_length=10, max_length=10)
+
+
+class BatchAttendee(CalendarModel):
+    """Validate batch event attendee."""
+
+    email: str = Field(min_length=3, max_length=320)
+
+
+class BatchReminders(CalendarModel):
+    """Validate batch event reminders."""
+
+    use_default: bool = Field(alias='useDefault')
+    overrides: tuple[ReminderOverride, ...] = Field(max_length=5)
+
+
+class BatchEventBody(CalendarModel):
+    """Validate batch event body."""
+
+    summary: str | None = Field(default=None, max_length=4_000)
+    description: str | None = Field(default=None, max_length=4_000)
+    location: str | None = Field(default=None, max_length=4_000)
+    start: BatchEventDateTime | BatchEventDate | None = None
+    end: BatchEventDateTime | BatchEventDate | None = None
+    attendees: tuple[BatchAttendee, ...] | None = Field(
+        default=None, max_length=100
+    )
+    reminders: BatchReminders | None = None
+    recurrence: (
+        tuple[
+            Annotated[
+                str,
+                Field(
+                    min_length=1,
+                    max_length=1_000,
+                    pattern=r'^(?:RRULE|RDATE|EXDATE):',
+                ),
+            ],
+            ...,
+        ]
+        | None
+    ) = Field(default=None, max_length=10)
+
+
 class BatchOperation(CalendarModel):
     """Describe Calendar batch mutation."""
 
-    operation_id: str
+    operation_id: str = Field(min_length=1, max_length=256)
     operation: BatchOperationType
-    calendar_id: str
-    event_id: str | None = None
-    etag: str | None = None
-    body: dict[str, object] | None = None
+    calendar_id: str = Field(min_length=1, max_length=256)
+    event_id: str | None = Field(default=None, min_length=1, max_length=256)
+    etag: str | None = Field(default=None, min_length=1, max_length=256)
+    body: BatchEventBody | None = None
     send_updates: SendUpdates = SendUpdates.NONE
 
 
