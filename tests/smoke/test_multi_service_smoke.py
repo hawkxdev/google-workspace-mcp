@@ -188,17 +188,17 @@ def test_all_five_services_multi_isolation_and_route_collisions(
         assert len(set(download_paths)) == 5
 
         # Verify tool inventory per service:
-        # Gmail 18, Calendar 9, Drive 10, Sheets 0, Docs 0
+        # Gmail 18, Calendar 9, Drive 10, Sheets 11, Docs 0
         assert len(res_gmail[1]._tool_manager.list_tools()) == 18
         assert len(res_cal[1]._tool_manager.list_tools()) == 9
         assert len(res_drv[1]._tool_manager.list_tools()) == 10
-        assert len(res_sht[1]._tool_manager.list_tools()) == 0
+        assert len(res_sht[1]._tool_manager.list_tools()) == 11
         assert len(res_doc[1]._tool_manager.list_tools()) == 0
 
         assert len(res_gmail[2].readonly_capabilities) == 7
         assert len(res_cal[2].readonly_capabilities) == 5
         assert len(res_drv[2].readonly_capabilities) == 3
-        assert len(res_sht[2].readonly_capabilities) == 0
+        assert len(res_sht[2].readonly_capabilities) == 3
         assert len(res_doc[2].readonly_capabilities) == 0
 
         # Check endpoints and route collisions on all 5 services

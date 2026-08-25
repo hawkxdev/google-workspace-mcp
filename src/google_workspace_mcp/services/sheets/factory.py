@@ -12,6 +12,8 @@ from google_workspace_mcp.transport.authorization import PolicyMCPServer
 from google_workspace_mcp.transport.extensions import Extension
 from google_workspace_mcp.transport.factory import create_service_app
 
+from .extension import SheetsExtension
+
 
 def create_sheets_app(
     config: ServiceConfig | None = None,
@@ -19,4 +21,8 @@ def create_sheets_app(
 ) -> tuple[Starlette, PolicyMCPServer, OAuthState]:
     """Create Sheets application."""
     resolved_config = config or ServiceConfig.from_env('sheets')
-    return create_service_app(resolved_config, extensions=extensions)
+    sheets_extension = SheetsExtension(resolved_config)
+    return create_service_app(
+        resolved_config,
+        extensions=(sheets_extension, *extensions),
+    )
