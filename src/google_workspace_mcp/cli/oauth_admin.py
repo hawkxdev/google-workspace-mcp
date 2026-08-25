@@ -131,6 +131,21 @@ def _state_from_args(args: argparse.Namespace) -> OAuthState:
     )
 
 
+def _normalize_identifier_args(argv: list[str] | None) -> list[str]:
+    """Normalize option like identifiers."""
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    for index in range(len(arguments) - 2):
+        if (
+            arguments[index] in {'clients', 'tokens'}
+            and arguments[index + 1] == 'revoke'
+            and arguments[index + 2].startswith('-')
+            and arguments[index + 2] != '--'
+        ):
+            arguments.insert(index + 2, '--')
+            break
+    return arguments
+
+
 def main(
     argv: list[str] | None = None,
     *,
@@ -140,7 +155,7 @@ def main(
     """Execute local metadata operation."""
     output = stdout or sys.stdout
     errors = stderr or sys.stderr
-    args = _parser().parse_args(argv)
+    args = _parser().parse_args(_normalize_identifier_args(argv))
     state: OAuthState | None = None
     try:
         state = _state_from_args(args)

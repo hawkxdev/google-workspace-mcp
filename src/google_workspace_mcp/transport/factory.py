@@ -31,13 +31,26 @@ def _validate_public_url_is_https(config: ServiceConfig) -> None:
     protected_resource_metadata_url(canonicalize_resource(config.public_url))
 
 
+def _paths_alias(left: os.PathLike[str], right: os.PathLike[str]) -> bool:
+    """Compare secure state paths."""
+    left_real = os.path.normcase(os.path.realpath(left)).casefold()
+    right_real = os.path.normcase(os.path.realpath(right)).casefold()
+    if left_real == right_real:
+        return True
+    try:
+        return os.path.samefile(left, right)
+    except FileNotFoundError:
+        return False
+
+
 def _validate_state_paths_are_distinct(config: ServiceConfig) -> None:
     """Validate distinct state paths."""
-    audit = os.path.abspath(config.audit_log_path)
-    if audit == os.path.abspath(config.oauth_state_path):
+    if _paths_alias(config.audit_log_path, config.oauth_state_path):
         raise ValueError('audit_log_path and oauth_state_path must differ')
-    if audit == os.path.abspath(config.google_token_path):
+    if _paths_alias(config.audit_log_path, config.google_token_path):
         raise ValueError('audit_log_path and google_token_path must differ')
+    if _paths_alias(config.oauth_state_path, config.google_token_path):
+        raise ValueError('oauth_state_path and google_token_path must differ')
 
 
 def validate_service_config(config: ServiceConfig) -> None:
@@ -62,34 +75,36 @@ def create_service_app(
     extensions: Sequence[Extension] = (),
 ) -> tuple[Starlette, PolicyMCPServer, OAuthState]:
     """Create service application."""
-    validate_service_config(config)
-    server = PolicyMCPServer(name=config.service_id)
-    registrar = ToolRegistrar(server)
-    prepared: list[Extension] = []
+    owned_extensions = tuple(extensions)
+    state: OAuthState | None = None
     try:
+        validate_service_config(config)
+        server = PolicyMCPServer(name=config.service_id)
+        registrar = ToolRegistrar(server)
         # Tool registration
-        for ext in extensions:
-            ext.register_tools(registrar)
-            prepared.append(ext)
+        for extension in owned_extensions:
+            extension.register_tools(registrar)
         state = OAuthState(
             config.oauth_state_path,
             download_path=config.download_path,
             service_id=config.service_id,
             resource=config.public_url,
-            readonly_capabilities=server.registered_capabilities(),
+            readonly_capabilities=server.readonly_capabilities(),
             legacy_path=config.legacy_clients_path,
             approved_legacy_client_ids=config.approved_legacy_client_ids,
             access_token_ttl_seconds=config.access_token_ttl_seconds,
             refresh_token_ttl_seconds=config.refresh_token_ttl_seconds,
         )
-    except BaseException:
-        _shutdown_extensions(prepared)
-        raise
-    try:
         # Transport assembly
-        app = build_app(config, state, server, extensions=extensions)
+        app = build_app(
+            config,
+            state,
+            server,
+            extensions=owned_extensions,
+        )
         return app, server, state
     except BaseException:
-        state.close()
-        _shutdown_extensions(extensions)
+        if state is not None:
+            state.close()
+        _shutdown_extensions(owned_extensions)
         raise

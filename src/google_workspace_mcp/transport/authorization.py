@@ -17,13 +17,26 @@ class PolicyMCPServer(MCPServer):
     def __init__(self, name: str | None = None, **kwargs: Any) -> None:
         """Initialize policy server instance."""
         self._required_tool_capabilities: dict[str, str] = {}
+        self._readonly_capabilities: set[str] = set()
+        self._readonly_tool_names: set[str] = set()
         super().__init__(name=name, **kwargs)
 
-    def register_capability(self, name: str, capability: str) -> None:
+    def register_capability(
+        self,
+        name: str,
+        capability: str,
+        *,
+        available_to_readonly: bool = False,
+    ) -> None:
         """Register tool capability requirement."""
+        if name in self._required_tool_capabilities:
+            raise ValueError(f'duplicate tool registration: {name}')
         if not capability:
             raise ValueError('tool capability must not be empty')
         self._required_tool_capabilities[name] = capability
+        if available_to_readonly:
+            self._readonly_capabilities.add(capability)
+            self._readonly_tool_names.add(name)
 
     def record_tool_capability(self, tool_name: str, capability: str) -> None:
         """Record tool capability requirement."""
@@ -37,6 +50,10 @@ class PolicyMCPServer(MCPServer):
         """List registered tool capabilities."""
         return tuple(sorted(set(self._required_tool_capabilities.values())))
 
+    def readonly_capabilities(self) -> tuple[str, ...]:
+        """List readonly tool capabilities."""
+        return tuple(sorted(self._readonly_capabilities))
+
     def _tool_allowed(self, tool_name: str) -> bool:
         """Check tool permission status."""
         principal = current_principal()
@@ -45,7 +62,11 @@ class PolicyMCPServer(MCPServer):
         if principal.full_access:
             return True
         required = self.required_capability(tool_name)
-        return required is not None and required in principal.capabilities
+        return (
+            tool_name in self._readonly_tool_names
+            and required is not None
+            and required in principal.capabilities
+        )
 
     @staticmethod
     def _full_access() -> bool:
@@ -129,6 +150,7 @@ class ToolRegistrar:
         structured_output: bool | None = None,
         *,
         required_capability: str | None = None,
+        available_to_readonly: bool = False,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Decorator registering tool capability."""
         if callable(name):
@@ -139,6 +161,10 @@ class ToolRegistrar:
         def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
             effective_name = name or fn.__name__
             capability = required_capability or effective_name
+            if self._server.required_capability(effective_name) is not None:
+                raise ValueError(
+                    f'duplicate tool registration: {effective_name}'
+                )
             self._server.add_tool(
                 fn,
                 name=name,
@@ -149,7 +175,11 @@ class ToolRegistrar:
                 meta=meta,
                 structured_output=structured_output,
             )
-            self._server.register_capability(effective_name, capability)
+            self._server.register_capability(
+                effective_name,
+                capability,
+                available_to_readonly=available_to_readonly,
+            )
             return fn
 
         return decorator

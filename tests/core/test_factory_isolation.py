@@ -186,9 +186,17 @@ def test_create_service_app_with_extensions(tmp_path: Path) -> None:
             @registrar.tool(
                 name='custom_ext_tool',
                 required_capability='mail.read',
+                available_to_readonly=True,
             )
             def custom_ext_tool() -> str:
                 return 'ext_ok'
+
+            @registrar.tool(
+                name='custom_write_tool',
+                required_capability='mail.write',
+            )
+            def custom_write_tool() -> str:
+                return 'write_ok'
 
         def register_routes(self, app: Any) -> None:
             self.routes_registered = True
@@ -209,6 +217,7 @@ def test_create_service_app_with_extensions(tmp_path: Path) -> None:
         assert ext.tools_registered is True
         assert ext.routes_registered is True
         assert server.required_capability('custom_ext_tool') == 'mail.read'
+        assert state.readonly_capabilities == ('mail.read',)
 
         metadata = TokenMetadata(
             token_id='full-token',

@@ -12,6 +12,8 @@ from google_workspace_mcp.transport.authorization import PolicyMCPServer
 from google_workspace_mcp.transport.extensions import Extension
 from google_workspace_mcp.transport.factory import create_service_app
 
+from .extension import GmailExtension
+
 
 def create_gmail_app(
     config: ServiceConfig | None = None,
@@ -19,4 +21,8 @@ def create_gmail_app(
 ) -> tuple[Starlette, PolicyMCPServer, OAuthState]:
     """Create Gmail application."""
     resolved_config = config or ServiceConfig.from_env('gmail')
-    return create_service_app(resolved_config, extensions=extensions)
+    gmail_extension = GmailExtension(resolved_config)
+    return create_service_app(
+        resolved_config,
+        extensions=(gmail_extension, *extensions),
+    )

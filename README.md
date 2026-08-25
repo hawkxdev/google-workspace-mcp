@@ -2,7 +2,7 @@
 
 A project for building five independent remote MCP servers for Google Workspace: Gmail, Google Calendar, Google Drive, Google Sheets, and Google Docs.
 
-> **Status: pre-alpha.** The repository contains five locally runnable MCP service processes with empty tool registries, isolated OAuth state and audit targets, OAuth-only bearer middleware, path-scoped OAuth routes, secure health and readiness endpoints, a metadata-only OAuth administration CLI, immutable per-service configuration, and a tested Google credential layer. Service tools and production Google credentials are not implemented yet.
+> **Status: pre-alpha.** The repository contains five locally runnable MCP service processes with isolated OAuth state, audit targets, path-scoped OAuth routes, secure health and readiness endpoints, immutable per-service configuration, a tested Google credential layer, and 18 Gmail tools. Calendar, Drive, Sheets, and Docs tool registries remain empty. Production Google credentials and deployment configuration are not included.
 
 ## Current status
 
@@ -26,22 +26,21 @@ Implemented:
 - public minimal health and protected readiness endpoints;
 - fail-closed per-service audit logging and startup validation;
 - exact trusted-proxy allowlists without wildcard forwarding trust.
+- 18 Gmail tools for bounded search and reading, label workflows, managed attachment downloads, full draft lifecycle, plain-text sending, and reply to the original author.
 
-All five service entry points run local MCP applications with empty tool registries. The OAuth administration entry point and Google credential layer are operational as internal components. Google service tools, deployment configuration, and production credentials are not implemented yet.
+The Gmail entry point registers its service tools and connects them to the service-specific Google credential boundary. Calendar, Drive, Sheets, and Docs continue to run with empty tool registries. Production Google credentials and deployment configuration are not included.
 
-## Planned services
+## Service status
 
-The table describes the target scope. These capabilities are not available yet.
+| Service | Status | Capabilities |
+|---|---|---|
+| `gmail` | Implemented locally | bounded message and thread search and reads, labels, managed attachment downloads, drafts, plain-text send, and reply |
+| `calendar` | Planned | calendars, event search and retrieval, availability, event creation and updates |
+| `drive` | Planned | file search, metadata, folder contents, download, and export |
+| `sheets` | Planned | spreadsheet metadata, range reads and writes, batch operations |
+| `docs` | Planned | document creation, structure and text retrieval, insert, and replace |
 
-| Service | Target capabilities |
-|---|---|
-| `gmail` | search and read messages and threads, labels, attachments, drafts, send, and reply |
-| `calendar` | calendars, event search and retrieval, availability, event creation and updates |
-| `drive` | file search, metadata, folder contents, download, and export |
-| `sheets` | spreadsheet metadata, range reads and writes, batch operations |
-| `docs` | document creation, structure and text retrieval, insert, and replace |
-
-In the target architecture, each service runs as a separate process with its own MCP endpoint, tool registry, Google OAuth scopes, Google credentials, and downstream OAuth state.
+Each service runs as a separate process with its own MCP endpoint, tool registry, Google OAuth scopes, Google credentials, and downstream OAuth state.
 
 ## Target authorization architecture
 
@@ -51,7 +50,7 @@ The design uses two independent layers:
 
 **Service to Google.** Each service uses separate Google credentials and the minimum required OAuth scopes. Google refresh tokens are never returned to MCP clients.
 
-The downstream state core, OAuth-only bearer middleware, OAuth endpoint routes, transport composition, five isolated service factories, and Google credential layer exist today. Google service tools are not implemented.
+The downstream state core, OAuth-only bearer middleware, OAuth endpoint routes, transport composition, five isolated service factories, Google credential layer, and Gmail service tools exist today. The other four service tool sets remain planned.
 
 ## Technology
 
@@ -126,9 +125,10 @@ The `--no-sync` flag is required when checking the installed dependency version.
 | `src/google_workspace_mcp/google_auth/` | secure Google credential persistence, refresh, and scope validation |
 | `src/google_workspace_mcp/audit/` | fail-closed per-service audit logging |
 | `src/google_workspace_mcp/transport/` | MCP policy, Streamable HTTP composition, and shared factory |
-| `src/google_workspace_mcp/services/` | five thin isolated service factories |
+| `src/google_workspace_mcp/services/` | five isolated service factories and Gmail domain tools |
 | `src/google_workspace_mcp/cli/` | five runnable service entry points, shared runner, and OAuth administration |
 | `tests/core/` | OAuth core and package entry point regressions |
+| `tests/services/` | Gmail provider, MIME, attachment, authorization, tool, and factory regressions |
 | `pyproject.toml` | package metadata, dependencies, and tool configuration |
 | `NOTICE` | provenance of adapted code |
 

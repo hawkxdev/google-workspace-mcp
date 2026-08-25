@@ -200,7 +200,9 @@ def test_registered_tool_capabilities_reach_oauth_state(
     class ToolExtension(Extension):
         def register_tools(self, registrar: ToolRegistrar) -> None:
             @registrar.tool(
-                name='search_messages', required_capability='mail.read'
+                name='search_messages',
+                required_capability='mail.read',
+                available_to_readonly=True,
             )
             def search_messages() -> str:
                 return 'ok'
@@ -399,13 +401,41 @@ def test_prepared_extensions_are_released_on_construction_failure(
         def __init__(self) -> None:
             super().__init__('/health', ['GET'])
 
+        def shutdown(self) -> None:
+            events.append('colliding-shutdown')
+
     with pytest.raises(ValueError, match='auth-exempt path'):
         create_service_app(
             config,
             extensions=[PreparedExtension(), CollidingExtension()],
         )
 
-    assert events == ['prepared', 'shutdown']
+    assert events == ['prepared', 'colliding-shutdown', 'shutdown']
+
+
+def test_extensions_are_released_on_early_factory_failures(
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+
+    class TrackedExtension(Extension):
+        def register_tools(self, registrar: ToolRegistrar) -> None:
+            events.append('register')
+            raise RuntimeError('registration failed')
+
+        def shutdown(self) -> None:
+            events.append('shutdown')
+
+    invalid = _config(tmp_path / 'invalid', public_url='http://localhost')
+    with pytest.raises(ValueError, match='HTTPS'):
+        create_service_app(invalid, extensions=[TrackedExtension()])
+    assert events == ['shutdown']
+
+    events.clear()
+    valid = _config(tmp_path / 'valid')
+    with pytest.raises(RuntimeError, match='registration failed'):
+        create_service_app(valid, extensions=[TrackedExtension()])
+    assert events == ['register', 'shutdown']
 
 
 # Startup validation
@@ -422,14 +452,43 @@ def test_factory_rejects_audit_path_colliding_with_state_or_token(
         tmp_path / 'b',
         audit_log_path=(tmp_path / 'b' / 'state' / 'google_token.json'),
     )
+    state_token_collision = _config(
+        tmp_path / 'c',
+        google_token_path=(tmp_path / 'c' / 'state' / 'oauth_state.sqlite3'),
+    )
 
     with pytest.raises(ValueError, match='oauth_state_path must differ'):
         create_service_app(state_collision)
     with pytest.raises(ValueError, match='google_token_path must differ'):
         create_service_app(token_collision)
+    with pytest.raises(
+        ValueError, match='oauth_state_path and google_token_path'
+    ):
+        create_service_app(state_token_collision)
 
     assert not state_collision.oauth_state_path.exists()
     assert not token_collision.oauth_state_path.exists()
+    assert not state_token_collision.oauth_state_path.exists()
+
+
+def test_factory_rejects_state_paths_through_symlink_alias(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / 'alias'
+    state_dir = root / 'state'
+    state_dir.mkdir(parents=True, mode=0o700)
+    root.chmod(0o700)
+    alias = tmp_path / 'state-link'
+    alias.symlink_to(state_dir, target_is_directory=True)
+    config = _config(
+        root,
+        google_token_path=alias / 'oauth_state.sqlite3',
+    )
+    with pytest.raises(
+        ValueError, match='oauth_state_path and google_token_path'
+    ):
+        create_service_app(config)
+    assert not config.oauth_state_path.exists()
 
 
 def test_factory_rejects_invalid_public_url_before_touching_state(

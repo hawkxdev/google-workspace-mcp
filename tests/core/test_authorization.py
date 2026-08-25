@@ -35,7 +35,11 @@ async def test_policy_server_guards_tools() -> None:
     srv = PolicyMCPServer('test-srv')
     reg = ToolRegistrar(srv)
 
-    @reg.tool(name='op', required_capability='mail.read')
+    @reg.tool(
+        name='op',
+        required_capability='mail.read',
+        available_to_readonly=True,
+    )
     def op() -> str:
         return 'ok'
 
@@ -92,6 +96,25 @@ def test_policy_registrar_is_narrow_and_fail_closed() -> None:
         return 'auto'
 
     assert srv.required_capability('auto_cap_tool') == 'auto_cap_tool'
+
+    @reg.tool(
+        name='readonly_tool',
+        required_capability='mail.read',
+        available_to_readonly=True,
+    )
+    def readonly_tool() -> str:
+        return 'readonly'
+
+    @reg.tool(name='full_tool', required_capability='mail.write')
+    def full_tool() -> str:
+        return 'full'
+
+    assert srv.registered_capabilities() == (
+        'auto_cap_tool',
+        'mail.read',
+        'mail.write',
+    )
+    assert srv.readonly_capabilities() == ('mail.read',)
 
 
 @pytest.mark.asyncio
@@ -205,3 +228,52 @@ def test_extension_seam_base_class() -> None:
     assert ext.tools_registered is True
     assert ext.routes_registered is True
     assert ext.shut_down is True
+
+
+@pytest.mark.asyncio
+async def test_full_only_tool_cannot_share_readonly_capability() -> None:
+    server = PolicyMCPServer('alias-srv')
+    registrar = ToolRegistrar(server)
+
+    @registrar.tool(
+        name='read_tool',
+        required_capability='mail.shared',
+        available_to_readonly=True,
+    )
+    def read_tool() -> str:
+        return 'read'
+
+    @registrar.tool(
+        name='write_tool',
+        required_capability='mail.shared',
+    )
+    def write_tool() -> str:
+        return 'write'
+
+    principal = _make_principal(capabilities=frozenset({'mail.shared'}))
+    token = context.set_request_context(principal, 'req-alias')
+    try:
+        tools = await server.list_tools()
+        assert [tool.name for tool in tools] == ['read_tool']
+        with pytest.raises(ToolError, match='Forbidden'):
+            await server.call_tool('write_tool', {})
+    finally:
+        context.reset_request_context(token)
+
+
+def test_duplicate_tool_registration_is_rejected_atomically() -> None:
+    server = PolicyMCPServer('duplicate-srv')
+    registrar = ToolRegistrar(server)
+
+    @registrar.tool(name='shared', available_to_readonly=True)
+    def readonly_tool() -> str:
+        return 'read'
+
+    with pytest.raises(ValueError, match='duplicate tool registration'):
+
+        @registrar.tool(name='shared')
+        def mutation_tool() -> str:
+            return 'write'
+
+    assert server.required_capability('shared') == 'shared'
+    assert server.readonly_capabilities() == ('shared',)

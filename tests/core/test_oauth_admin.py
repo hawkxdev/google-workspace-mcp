@@ -90,6 +90,19 @@ def test_service_selection_is_required() -> None:
         oauth_admin.main(['clients', 'list'])
 
 
+def test_revoke_accepts_option_like_token_id(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _configure_service(monkeypatch, tmp_path, 'drive')
+    result, stdout, stderr = _run(
+        'drive', 'tokens', 'revoke', '-option-like-token-id'
+    )
+    assert result == 1
+    assert json.loads(stdout) == {'revoked': False}
+    assert stderr == ''
+
+
 def test_client_inventory_and_revoke_are_metadata_only(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
