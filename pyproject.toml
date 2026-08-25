@@ -43,10 +43,10 @@ packages = ['src/google_workspace_mcp']
 
 [tool.pytest.ini_options]
 testpaths = ['tests']
+pythonpath = ['src']
 addopts = '--strict-markers -ra --import-mode=importlib'
 asyncio_mode = 'auto'
 asyncio_default_fixture_loop_scope = 'function'
-
 [tool.ruff]
 line-length = 79
 

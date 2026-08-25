@@ -12,6 +12,8 @@ from google_workspace_mcp.transport.authorization import PolicyMCPServer
 from google_workspace_mcp.transport.extensions import Extension
 from google_workspace_mcp.transport.factory import create_service_app
 
+from .extension import DriveExtension
+
 
 def create_drive_app(
     config: ServiceConfig | None = None,
@@ -19,4 +21,8 @@ def create_drive_app(
 ) -> tuple[Starlette, PolicyMCPServer, OAuthState]:
     """Create Drive application."""
     resolved_config = config or ServiceConfig.from_env('drive')
-    return create_service_app(resolved_config, extensions=extensions)
+    drive_extension = DriveExtension(resolved_config)
+    return create_service_app(
+        resolved_config,
+        extensions=(drive_extension, *extensions),
+    )

@@ -8,12 +8,16 @@ from typing import Annotated
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
+from google_workspace_mcp.common.managed_files import (
+    ManagedFileError,
+    ManagedFileStore,
+)
 from google_workspace_mcp.transport.authorization import ToolRegistrar
 
-from ..attachments import ManagedAttachmentStore
 from ..client import GmailGateway
 from ..constants import MAX_ATTACHMENT_BYTES
-from ..errors import GmailAttachmentError
+from ..errors import GmailAttachmentError, GmailPayloadError
+from ..mime import decode_base64url
 from ..schemas import DownloadedAttachment, MutationResult, TargetType
 from .common import run_gateway
 
@@ -33,10 +37,51 @@ def _target_annotations() -> ToolAnnotations:
     )
 
 
+def _decode_attachment_payload(
+    encoded_data: str,
+    expected_size: int,
+    max_bytes: int = MAX_ATTACHMENT_BYTES,
+) -> bytes:
+    """Decode base64 attachment payload."""
+    if expected_size < 0 or expected_size > max_bytes:
+        raise GmailAttachmentError('attachment is too large')
+    global_encoded_limit = 4 * ((max_bytes + 2) // 3)
+    if len(encoded_data) > global_encoded_limit:
+        raise GmailAttachmentError('attachment is too large')
+    padding = 0
+    if encoded_data.endswith('=='):
+        padding = 2
+    elif encoded_data.endswith('='):
+        padding = 1
+    payload_length = len(encoded_data) - padding
+    if (
+        encoded_data.find('=') not in {-1, payload_length}
+        or payload_length % 4 == 1
+        or padding not in {0, (-payload_length) % 4}
+    ):
+        raise GmailAttachmentError('attachment encoding is invalid')
+    expected_encoded_limit = 4 * ((expected_size + 2) // 3)
+    if len(encoded_data) > expected_encoded_limit:
+        raise GmailAttachmentError('attachment size is invalid')
+    try:
+        encoded_data.encode('ascii')
+    except UnicodeEncodeError:
+        raise GmailAttachmentError('attachment encoding is invalid') from None
+    try:
+        data = decode_base64url(encoded_data)
+    except GmailPayloadError:
+        raise GmailAttachmentError('attachment encoding is invalid') from None
+    if len(data) > max_bytes:
+        raise GmailAttachmentError('attachment is too large')
+    if len(data) != expected_size:
+        raise GmailAttachmentError('attachment size is invalid')
+    return data
+
+
 def register_mutation_tools(
     registrar: ToolRegistrar,
     gateway: GmailGateway,
-    attachments: ManagedAttachmentStore,
+    attachments: ManagedFileStore,
 ) -> None:
     """Register Gmail mutation tools."""
 
@@ -148,12 +193,26 @@ def register_mutation_tools(
             payload = gateway.get_attachment(message_id, attachment_id)
             if payload.size != descriptor.size:
                 raise GmailAttachmentError('attachment size is invalid')
-            return attachments.save(
-                message_id,
-                attachment_id,
-                descriptor.filename,
-                descriptor.size,
+            decoded_bytes = _decode_attachment_payload(
                 payload.encoded_data,
+                descriptor.size,
+                MAX_ATTACHMENT_BYTES,
+            )
+            try:
+                record = attachments.publish_bytes(
+                    'gmail',
+                    attachment_id,
+                    descriptor.filename,
+                    descriptor.mime_type or 'application/octet-stream',
+                    descriptor.size,
+                    decoded_bytes,
+                )
+            except ManagedFileError as exc:
+                raise GmailAttachmentError(str(exc)) from exc
+            return DownloadedAttachment(
+                path=str(attachments.directory / record.managed_name),
+                filename=record.managed_name,
+                size=record.size,
             )
 
         return await run_gateway(download)

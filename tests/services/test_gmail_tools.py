@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from google_workspace_mcp.auth import context
@@ -194,9 +196,13 @@ async def test_download_tool_binds_descriptor_size_before_storage() -> None:
     class RejectingStore:
         """Reject unexpected attachment storage."""
 
-        def save(self, *args: object) -> object:
-            """Reject unexpected save call."""
-            raise AssertionError(f'unexpected save: {args!r}')
+        @property
+        def directory(self) -> Path:
+            return Path.cwd()
+
+        def publish_bytes(self, *args: object) -> object:
+            """Reject unexpected publish call."""
+            raise AssertionError(f'unexpected publish: {args!r}')
 
     async def invoke(gateway: AttachmentGateway) -> None:
         """Invoke attachment tool once."""
@@ -228,3 +234,63 @@ async def test_download_tool_binds_descriptor_size_before_storage() -> None:
     with pytest.raises(Exception, match='attachment size is invalid'):
         await invoke(mismatched)
     assert mismatched.fetch_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_download_tool_decodes_and_publishes_attachment(
+    tmp_path: Path,
+) -> None:
+    class SuccessGateway(UnusedGateway):
+        def get_message(self, message_id: str) -> MessageDetail:
+            return MessageDetail(
+                message_id=message_id,
+                thread_id='t1',
+                attachments=(
+                    AttachmentSummary(
+                        attachment_id='a1',
+                        filename='report.pdf',
+                        size=4,
+                    ),
+                ),
+            )
+
+        def get_attachment(
+            self, message_id: str, attachment_id: str
+        ) -> AttachmentPayload:
+            import base64
+
+            del message_id, attachment_id
+            return AttachmentPayload(
+                attachment_id='a1',
+                encoded_data=base64.urlsafe_b64encode(b'data')
+                .decode()
+                .rstrip('='),
+                size=4,
+            )
+
+    from google_workspace_mcp.common.managed_files import ManagedFileStore
+
+    store = ManagedFileStore(tmp_path, max_bytes=100)
+    server = PolicyMCPServer('gmail')
+    register_gmail_tools(ToolRegistrar(server), SuccessGateway(), store)
+    principal = context.AuthenticatedPrincipal(
+        principal_id='full',
+        credential_id='0' * 64,
+        client_id='client',
+        policy='legacy_full',
+        capabilities=frozenset(),
+        full_access=True,
+    )
+    token = context.set_request_context(principal, 'request')
+    try:
+        result = await server.call_tool(
+            'gmail_download_attachment',
+            {'message_id': 'm1', 'attachment_id': 'a1'},
+        )
+    finally:
+        context.reset_request_context(token)
+
+    structured = result.structured_content
+    assert structured['size'] == 4
+    assert structured['filename'].endswith('report.pdf')
+    assert (tmp_path / structured['filename']).read_bytes() == b'data'
