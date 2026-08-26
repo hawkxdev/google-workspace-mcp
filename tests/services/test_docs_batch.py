@@ -731,7 +731,15 @@ def test_bullet_operations_cannot_join_replacement(
 def test_batch_reply_normalization_reports_unknown_outcome(
     fake_service: FakeDocsService, gateway: DocsGateway
 ) -> None:
-    stage(fake_service, replies=('not-a-mapping',))
+    fake_service.queue('get', simple_document())
+    fake_service.queue(
+        'batchUpdate',
+        {
+            'documentId': 'document-1',
+            'replies': ['not-a-mapping'],
+            'writeControl': {'requiredRevisionId': 'revision-2'},
+        },
+    )
     with pytest.raises(
         DocsIndeterminateWriteError, match='may have been applied'
     ):
