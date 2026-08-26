@@ -8,7 +8,7 @@ A project for building five independent remote MCP servers for Google Workspace:
 
 Implemented:
 
-- a Python package with five service entry points and one OAuth administration entry point;
+- a Python package with five service entry points, one Google authorization entry point, and one OAuth administration entry point;
 - SQLite-backed downstream OAuth state;
 - OAuth client registration and PKCE;
 - token binding to a canonical `resource`;
@@ -107,6 +107,18 @@ uv run --no-sync google-mcp-oauth --service gmail clients list
 
 Each service uses its own `<SERVICE>_OAUTH_STATE_PATH` and `<SERVICE>_MCP_DOWNLOAD_PATH`. The download path is a security boundary: OAuth state and backups are rejected inside it.
 
+## Google authorization
+
+Each service reaches Google with its own credentials, so each one is authorized separately and keeps its own credential file. The authorization entry point runs the installed application consent flow on loopback, requests offline access explicitly, and stores the result through the same owner-only credential path the services read.
+
+```bash
+uv run --no-sync google-mcp-authorize --service gmail --client-secrets ./client_secret.json
+```
+
+The client secrets file must be a regular file owned by the current user with no group or other permissions. A grant that returns no refresh token, or that grants fewer scopes than the service requires, is rejected and nothing is written. The command prints one JSON line containing the service, the credential path, the granted scopes, whether a refresh token is present, and the access token expiry. Token values, client secrets, and authorization codes are never printed.
+
+Requesting offline access is what makes the grant durable. Without it the grant returns no refresh token and every service would need an interactive browser round trip again.
+
 ## Checks
 
 ```bash
@@ -132,7 +144,7 @@ The `--no-sync` flag is required when checking the installed dependency version.
 | `src/google_workspace_mcp/audit/` | fail-closed per-service audit logging |
 | `src/google_workspace_mcp/transport/` | MCP policy, Streamable HTTP composition, and shared factory |
 | `src/google_workspace_mcp/services/` | five isolated service factories plus Gmail, Calendar, Drive, Sheets, and Docs domain tools |
-| `src/google_workspace_mcp/cli/` | five runnable service entry points, shared runner, and OAuth administration |
+| `src/google_workspace_mcp/cli/` | five runnable service entry points, shared runner, Google authorization, and OAuth administration |
 | `tests/core/` | OAuth core and package entry point regressions |
 | `tests/services/` | Gmail, Calendar, Drive, Sheets, and Docs provider, domain, authorization, tool, and factory regressions |
 | `pyproject.toml` | package metadata, dependencies, and tool configuration |

@@ -25,6 +25,7 @@ google-mcp-drive = 'google_workspace_mcp.cli.drive:main'
 google-mcp-sheets = 'google_workspace_mcp.cli.sheets:main'
 google-mcp-docs = 'google_workspace_mcp.cli.docs:main'
 google-mcp-oauth = 'google_workspace_mcp.cli.oauth_admin:main'
+google-mcp-authorize = 'google_workspace_mcp.cli.authorize:main'
 
 [dependency-groups]
 dev = [
@@ -71,6 +72,8 @@ select = ['E', 'F', 'I', 'SIM', 'UP', 'S', 'G']
 'src/google_workspace_mcp/google_auth/credentials.py' = ['S105']
 # Credential security test allowances.
 'tests/core/test_google_auth.py' = ['S103', 'S107', 'S603']
+# Consent fixture defaults are the subject under test.
+'tests/core/test_google_consent.py' = ['S107']
 
 [tool.ruff.lint.isort]
 known-first-party = ['google_workspace_mcp']
@@ -84,7 +87,7 @@ python_version = '3.14'
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ['googleapiclient.*']
+module = ['googleapiclient.*', 'google_auth_oauthlib.*']
 ignore_missing_imports = true
 
 [tool.pyright]
