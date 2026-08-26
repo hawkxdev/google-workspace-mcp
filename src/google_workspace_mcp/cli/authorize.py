@@ -52,13 +52,23 @@ def _default_consent(
     return run_consent_flow(client_secrets, scopes, port=port)
 
 
+def _os_detail(errno_value: object) -> str:
+    """Describe errno without secrets."""
+    # OSError built with two non integer arguments carries a str errno
+    if isinstance(errno_value, bool) or not isinstance(errno_value, int):
+        return 'os error'
+    return os.strerror(errno_value)
+
+
 def _safe_message(exc: BaseException) -> str:
     """Build secret free message."""
-    if isinstance(exc, GoogleAuthError):
-        return str(exc)
-    if isinstance(exc, OSError):
-        detail = os.strerror(exc.errno) if exc.errno else 'os error'
-        return f'credential path is unusable: {detail}'
+    try:
+        if isinstance(exc, GoogleAuthError):
+            return str(exc)
+        if isinstance(exc, OSError):
+            return f'credential path is unusable: {_os_detail(exc.errno)}'
+    except Exception:
+        return _UNEXPECTED_FAILURE
     return _UNEXPECTED_FAILURE
 
 

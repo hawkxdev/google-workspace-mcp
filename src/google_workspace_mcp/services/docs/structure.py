@@ -687,6 +687,8 @@ def _project_element(
         if not isinstance(content, str):
             raise DocsProviderError(_INVALID_RESPONSE)
         if start < budget.floor:
+            # Dropping half a surrogate pair would shift every reported index
+            validate_utf16_boundary(content, budget.floor - start)
             content = _drop_utf16_prefix(content, budget.floor - start)
             start = budget.floor
         kept = budget.take_text(content, start)

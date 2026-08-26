@@ -445,6 +445,58 @@ def test_server_error_after_write_reports_unknown_outcome(
         )
 
 
+@pytest.mark.parametrize(
+    ('status', 'reason'),
+    [
+        (503, 'rateLimitExceeded'),
+        (503, 'failedPrecondition'),
+        (500, 'conditionNotMet'),
+        (502, 'quotaExceeded'),
+        (503, 'userRateLimitExceeded'),
+    ],
+)
+def test_server_error_body_reason_cannot_downgrade_a_write(
+    fake_service: FakeDocsService,
+    gateway: DocsGateway,
+    status: int,
+    reason: str,
+) -> None:
+    fake_service.queue('get', simple_document())
+    fake_service.queue(
+        'batchUpdate', FakeRequest(error=make_http_error(status, reason))
+    )
+    with pytest.raises(
+        DocsIndeterminateWriteError, match='may have been applied'
+    ):
+        gateway.insert_text(
+            'document-1',
+            'tab-1',
+            1,
+            'Hello',
+            required_revision_id='revision-1',
+        )
+
+
+@pytest.mark.parametrize(
+    ('status', 'reason', 'expected'),
+    [
+        (503, 'rateLimitExceeded', DocsRateLimitError),
+        (503, 'userRateLimitExceeded', DocsRateLimitError),
+    ],
+)
+def test_server_error_body_reason_still_classifies_a_read(
+    fake_service: FakeDocsService,
+    gateway: DocsGateway,
+    status: int,
+    reason: str,
+    expected: type[Exception],
+) -> None:
+    queue_error(fake_service, make_http_error(status, reason))
+    with pytest.raises(expected) as caught:
+        gateway.get_document('document-1')
+    assert not isinstance(caught.value, DocsIndeterminateWriteError)
+
+
 @pytest.mark.parametrize('status', [500, 503])
 def test_server_error_on_read_stays_retryable(
     fake_service: FakeDocsService, gateway: DocsGateway, status: int

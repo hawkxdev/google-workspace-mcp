@@ -14,7 +14,10 @@ import pytest
 from google_workspace_mcp.cli import SERVICES
 from google_workspace_mcp.cli.authorize import SERVICE_SCOPES, main
 from google_workspace_mcp.google_auth import GoogleCredentials
-from google_workspace_mcp.google_auth.errors import ScopeMismatchError
+from google_workspace_mcp.google_auth.errors import (
+    GoogleAuthError,
+    ScopeMismatchError,
+)
 from google_workspace_mcp.services.calendar.constants import CALENDAR_SCOPES
 from google_workspace_mcp.services.docs.constants import DOCS_SCOPES
 from google_workspace_mcp.services.drive.constants import DRIVE_SCOPES
@@ -364,6 +367,68 @@ def test_os_error_message_carries_only_the_error_name(
     assert json.loads(err)['error'] == (
         f'credential path is unusable: {os.strerror(5)}'
     )
+
+
+def test_non_integer_errno_still_yields_one_safe_json_line(
+    workspace: Path,
+) -> None:
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
+        """Raise a two argument OSError with a str errno."""
+        raise OSError('authorization_response=code=SECRET123', 'payload')
+
+    code, out, err = run_cli(workspace, 'docs', consent)
+    assert code == 1
+    assert out == ''
+    assert json.loads(err) == {
+        'error': 'credential path is unusable: os error'
+    }
+    assert 'SECRET123' not in err
+
+
+def test_failing_exception_repr_cannot_escape_the_handler(
+    workspace: Path,
+) -> None:
+    class HostileAuthError(GoogleAuthError):
+        """Raise while being rendered."""
+
+        def __str__(self) -> str:
+            """Fail during rendering."""
+            raise RuntimeError('token=SECRET999')
+
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
+        """Raise an error that breaks while rendering."""
+        raise HostileAuthError
+
+    code, out, err = run_cli(workspace, 'docs', consent)
+    assert code == 1
+    assert out == ''
+    assert json.loads(err) == {
+        'error': 'authorization failed before credentials were stored'
+    }
+    assert 'SECRET999' not in err
+
+
+def test_boolean_errno_is_not_read_as_a_permission_code(
+    workspace: Path,
+) -> None:
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
+        """Raise an OSError whose errno is True."""
+        error = OSError('failure')
+        error.errno = True
+        raise error
+
+    code, _, err = run_cli(workspace, 'docs', consent)
+    assert code == 1
+    assert json.loads(err)['error'] == (
+        'credential path is unusable: os error'
+    )
+    assert os.strerror(1) not in err
 
 
 def test_explicit_token_path_ignores_its_environment_variable(

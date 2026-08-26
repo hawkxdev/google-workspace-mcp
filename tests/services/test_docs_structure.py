@@ -255,6 +255,25 @@ def test_character_cap_truncates_projection() -> None:
     assert content.next_start_index is not None
 
 
+def test_start_index_inside_a_surrogate_pair_is_rejected() -> None:
+    body = [paragraph(1, f'{EMOJI}tail\n')]
+    with pytest.raises(DocsInputError, match='UTF-16 boundary'):
+        project_tab_content(
+            document([tab('tab-1', body)]), 'tab-1', start_index=2
+        )
+
+
+def test_start_index_after_a_surrogate_pair_keeps_true_coordinates() -> None:
+    body = [paragraph(1, f'{EMOJI}tail\n')]
+    content = project_tab_content(
+        document([tab('tab-1', body)]), 'tab-1', start_index=3
+    )
+    element = content.blocks[0].elements[0]
+    assert element.content == 'tail\n'
+    assert element.start_index == 3
+    assert element.end_index == 8
+
+
 def test_complete_projection_is_not_truncated() -> None:
     content = project_tab_content(
         document([tab('tab-1', simple_body())]), 'tab-1'

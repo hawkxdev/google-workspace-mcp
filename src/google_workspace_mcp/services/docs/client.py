@@ -507,6 +507,11 @@ class DocsGateway:
         if status == 404:
             return DocsNotFoundError('Docs resource was not found')
 
+        # A write that reached the provider has an unknown outcome above 4xx
+        # and a 5xx body reason must not downgrade it to a retryable class
+        if write and status >= 500:
+            return DocsIndeterminateWriteError(_INDETERMINATE)
+
         if status == 412 or reason in _CONFLICT_REASONS:
             if revision_bound:
                 return DocsConflictError('Docs document revision changed')
@@ -528,10 +533,6 @@ class DocsGateway:
 
         if status == 403:
             return DocsProviderError('Docs request was forbidden')
-
-        # A write that reached the provider has an unknown outcome above 4xx
-        if write and status >= 500:
-            return DocsIndeterminateWriteError(_INDETERMINATE)
 
         return DocsProviderError(_UNAVAILABLE)
 
