@@ -12,6 +12,7 @@ from google_workspace_mcp.services.docs.constants import (
 )
 from google_workspace_mcp.services.docs.errors import (
     DocsConflictError,
+    DocsIndeterminateWriteError,
     DocsInputError,
     DocsProviderError,
 )
@@ -329,7 +330,9 @@ def test_reply_count_mismatch_fails_closed(
     fake_service: FakeDocsService, gateway: DocsGateway
 ) -> None:
     stage(fake_service, replies=({},))
-    with pytest.raises(DocsProviderError):
+    with pytest.raises(
+        DocsIndeterminateWriteError, match='outcome is unknown'
+    ):
         run(gateway, [insert(index=1), insert(index=1)])
 
 
@@ -578,3 +581,98 @@ def test_batch_style_range_may_touch_terminal_newline(
         ],
     )
     assert result.operation_count == 1
+
+
+def test_replace_after_insert_is_rejected(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    stage(fake_service)
+    operations = [
+        insert(text='Hello '),
+        {
+            'operation': 'replace_text',
+            'search_text': 'Hello',
+            'replacement_text': 'X',
+            'match_case': True,
+            'expected_occurrences': 1,
+        },
+    ]
+    with pytest.raises(DocsInputError, match='shift indices'):
+        gateway.batch_update(
+            'document-1',
+            'tab-1',
+            operations,
+            required_revision_id='revision-1',
+        )
+    assert not [
+        call
+        for call in fake_service.documents_endpoint.calls
+        if call[0] == 'batchUpdate'
+    ]
+
+
+def test_replace_after_delete_is_rejected(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    stage(fake_service)
+    operations = [
+        {'operation': 'delete_range', 'start_index': 1, 'end_index': 2},
+        {
+            'operation': 'replace_text',
+            'search_text': 'Hello',
+            'replacement_text': 'X',
+            'match_case': True,
+            'expected_occurrences': 1,
+        },
+    ]
+    with pytest.raises(DocsInputError, match='shift indices'):
+        gateway.batch_update(
+            'document-1',
+            'tab-1',
+            operations,
+            required_revision_id='revision-1',
+        )
+
+
+def test_replace_alone_still_runs(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    stage(fake_service, replies=(replace_reply(1),))
+    operations = [
+        {
+            'operation': 'replace_text',
+            'search_text': 'Hello',
+            'replacement_text': 'X',
+            'match_case': True,
+            'expected_occurrences': 1,
+        }
+    ]
+    result = gateway.batch_update(
+        'document-1', 'tab-1', operations, required_revision_id='revision-1'
+    )
+    assert result.replies[0].occurrences_changed == 1
+
+
+def test_style_operations_still_combine_with_replace(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    stage(fake_service, replies=({}, replace_reply(1)))
+    operations = [
+        {
+            'operation': 'update_text_style',
+            'start_index': 1,
+            'end_index': 3,
+            'bold': True,
+        },
+        {
+            'operation': 'replace_text',
+            'search_text': 'Hello',
+            'replacement_text': 'X',
+            'match_case': True,
+            'expected_occurrences': 1,
+        },
+    ]
+    result = gateway.batch_update(
+        'document-1', 'tab-1', operations, required_revision_id='revision-1'
+    )
+    assert result.operation_count == 2

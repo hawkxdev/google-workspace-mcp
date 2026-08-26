@@ -9,14 +9,18 @@ import pytest
 from google_workspace_mcp.services.docs.client import DocsGateway
 from google_workspace_mcp.services.docs.constants import (
     MAX_DOCS_BLOCKS,
+    MAX_DOCS_NODES,
     MAX_DOCS_OUTPUT_CHARS,
 )
 from google_workspace_mcp.services.docs.errors import DocsInputError
 from google_workspace_mcp.services.docs.schemas import (
     DocsBlockKind,
     DocsElementKind,
+    DocsParagraphBlock,
+    DocsTableBlock,
 )
 from tests.services.docs_provider import (
+    EMOJI,
     FakeDocsService,
     FakeDocsStore,
     document,
@@ -196,3 +200,114 @@ def test_read_content_rejects_invalid_tab_identifier(
     with pytest.raises(DocsInputError, match='Tab ID'):
         gateway.read_content('document-1', tab_id)
     assert fake_service.documents_endpoint.calls == []
+
+
+def test_single_oversized_paragraph_is_clipped_to_cap(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    oversized = 'x' * (MAX_DOCS_OUTPUT_CHARS + 1)
+    fake_service.queue(
+        'get', document([tab('tab-1', [paragraph(1, oversized)])])
+    )
+    content = gateway.read_content('document-1', 'tab-1')
+    assert content.text_characters == MAX_DOCS_OUTPUT_CHARS
+    assert content.truncated is True
+    assert content.next_start_index == 1 + MAX_DOCS_OUTPUT_CHARS
+
+
+def empty_cell_table(start: int, count: int) -> dict[str, Any]:
+    """Build table of empty cells."""
+    cells = [
+        {
+            'startIndex': start + 1 + index,
+            'endIndex': start + 2 + index,
+            'content': [],
+        }
+        for index in range(count)
+    ]
+    return {
+        'startIndex': start,
+        'endIndex': start + count + 2,
+        'table': {
+            'rows': 1,
+            'columns': count,
+            'tableRows': [
+                {
+                    'startIndex': start + 1,
+                    'endIndex': start + count + 1,
+                    'tableCells': cells,
+                }
+            ],
+        },
+    }
+
+
+def single_cell_rows_table(start: int, rows: int) -> dict[str, Any]:
+    """Build table of empty rows."""
+    table_rows = [
+        {
+            'startIndex': start + 1 + index * 2,
+            'endIndex': start + 3 + index * 2,
+            'tableCells': [],
+        }
+        for index in range(rows)
+    ]
+    return {
+        'startIndex': start,
+        'endIndex': start + rows * 2 + 2,
+        'table': {'rows': rows, 'columns': 0, 'tableRows': table_rows},
+    }
+
+
+def test_cell_count_is_bounded_by_node_budget(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    count = MAX_DOCS_NODES + 50
+    fake_service.queue(
+        'get', document([tab('tab-1', [empty_cell_table(1, count)])])
+    )
+    content = gateway.read_content('document-1', 'tab-1')
+    projected = sum(
+        len(row.cells)
+        for block in content.blocks
+        if isinstance(block, DocsTableBlock)
+        for row in block.rows
+    )
+    assert content.truncated is True
+    assert projected == MAX_DOCS_NODES - 1
+    assert content.next_start_index is not None
+
+
+def test_row_count_is_bounded_by_node_budget(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    rows = MAX_DOCS_NODES + 50
+    fake_service.queue(
+        'get', document([tab('tab-1', [single_cell_rows_table(1, rows)])])
+    )
+    content = gateway.read_content('document-1', 'tab-1')
+    projected = sum(
+        len(block.rows)
+        for block in content.blocks
+        if isinstance(block, DocsTableBlock)
+    )
+    assert content.truncated is True
+    assert projected == MAX_DOCS_NODES
+    assert content.next_start_index is not None
+
+
+def test_clip_never_splits_a_surrogate_pair(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    text = EMOJI * 40
+    fake_service.queue('get', document([tab('tab-1', [paragraph(1, text)])]))
+    content = gateway.read_content('document-1', 'tab-1', max_chars=5)
+    kept = ''.join(
+        element.content or ''
+        for block in content.blocks
+        if isinstance(block, DocsParagraphBlock)
+        for element in block.elements
+    )
+    assert content.truncated is True
+    assert kept == EMOJI * 2
+    assert content.text_characters == 4

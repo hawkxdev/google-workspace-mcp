@@ -36,6 +36,14 @@ All five entry points register service-owned tools and connect them to separate 
 
 Docs addresses content by UTF-16 code units in half-open ranges, always requests every tab, and never reads the legacy top-level body. Every Docs mutation except document creation requires an explicit tab identifier and the revision returned by the most recent read, so a concurrent edit is refused before any change is applied. The mandatory final newline of a tab cannot be deleted, surrogate pairs cannot be split, and unsupported structures such as inline objects, equations and tables are reported explicitly instead of being flattened into text. Raw provider requests and raw field masks are refused by schema.
 
+A mutation is addressed against a map of the tab that distinguishes editable paragraph text from protected structural boundaries. An index inside a table frame rather than inside paragraph text is refused, and a range that would split a table boundary instead of covering it is refused as well, each before the provider is called. Text that Google silently removes, meaning the control ranges `U+0000` to `U+0008` and `U+000C` to `U+001F` and the private use area, is rejected rather than reported as written; tabs and newlines remain allowed.
+
+A content read is bounded by a block cap, a character budget and a node budget that also cover the inside of a single large block, so one oversized paragraph or one wide table is clipped rather than returned whole. A clipped response reports `truncated` and the `next_start_index` to continue from, and clipping never splits a surrogate pair.
+
+Batch operations run in caller order and the provider applies earlier index shifts, but every index is validated against the supplied revision alone. Indices therefore describe the state of that revision, and work that depends on an earlier shift belongs in a following call. Replacement cannot be combined with operations that shift indices, because the expected occurrence count is verified against the supplied revision. That count covers the whole tab, including headers, footers and footnotes, matching the scope the provider actually replaces in.
+
+A write is never retried automatically, and a transport failure or an unreadable response after a write is reported as an outcome that may already have been applied, distinct from a plain temporary failure. The caller is told to reread the document and compare its revision instead of repeating the call.
+
 ## Service status
 
 | Service | Status | Capabilities |
@@ -115,7 +123,7 @@ Each service reaches Google with its own credentials, so each one is authorized 
 uv run --no-sync google-mcp-authorize --service gmail --client-secrets ./client_secret.json
 ```
 
-The client secrets file must be a regular file owned by the current user with no group or other permissions. A grant that returns no refresh token, or that grants fewer scopes than the service requires, is rejected and nothing is written. The command prints one JSON line containing the service, the credential path, the granted scopes, whether a refresh token is present, and the access token expiry. Token values, client secrets, and authorization codes are never printed.
+The client secrets file must be a regular file owned by the current user with no group or other permissions. It is opened through its parent directory chain without following symbolic links and is read from the descriptor that was checked, so the file cannot be swapped between the check and the read. The credential path is proven writable before the browser step, so a predictable path failure cannot strand a grant that was already issued. A grant that returns no refresh token, or that grants fewer scopes than the service requires, is rejected and nothing is written. The command needs no service environment variables: the credential paths fall back to the same per-service defaults the services use, and `--token-path` and `--download-path` override them. Standard output carries exactly one JSON line containing the service, the credential path, the granted scopes, whether a refresh token is present, and the access token expiry; the consent prompt and any library output go to standard error. Token values, client secrets, authorization codes, provider payloads and local paths are never printed.
 
 Requesting offline access is what makes the grant durable. Without it the grant returns no refresh token and every service would need an interactive browser round trip again.
 

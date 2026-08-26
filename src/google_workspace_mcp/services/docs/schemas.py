@@ -40,6 +40,23 @@ class DocsElementKind(StrEnum):
     UNKNOWN = 'unknown'
 
 
+class DocsSpanKind(StrEnum):
+    """Select addressable span kind."""
+
+    TEXT = 'text'
+    PROTECTED = 'protected'
+    CONTAINER = 'container'
+
+
+class DocsSpan(DocsModel):
+    """Describe one addressable span."""
+
+    kind: DocsSpanKind
+    start_index: int
+    end_index: int
+    text: str = ''
+
+
 class DocsSegment(DocsModel):
     """Describe indexed tab segment."""
 
@@ -47,6 +64,7 @@ class DocsSegment(DocsModel):
     start_index: int
     end_index: int
     text: str
+    spans: tuple[DocsSpan, ...] = ()
 
 
 class DocsBulletMarker(DocsModel):

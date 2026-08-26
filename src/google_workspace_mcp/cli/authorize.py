@@ -10,13 +10,16 @@ from pathlib import Path
 from typing import TextIO
 
 from google_workspace_mcp.cli import SERVICES
-from google_workspace_mcp.common.config import ServiceConfig
+from google_workspace_mcp.common.config import resolve_credential_paths
 from google_workspace_mcp.google_auth import (
     GoogleAuthError,
     GoogleCredentials,
     GoogleCredentialStore,
 )
-from google_workspace_mcp.google_auth.consent import run_consent_flow
+from google_workspace_mcp.google_auth.consent import (
+    run_consent_flow,
+    validate_client_secrets_path,
+)
 from google_workspace_mcp.services.calendar.constants import CALENDAR_SCOPES
 from google_workspace_mcp.services.docs.constants import DOCS_SCOPES
 from google_workspace_mcp.services.drive.constants import DRIVE_SCOPES
@@ -31,15 +34,27 @@ SERVICE_SCOPES: dict[str, tuple[str, ...]] = {
     'docs': DOCS_SCOPES,
 }
 
-ConsentRunner = Callable[[Path, tuple[str, ...]], GoogleCredentials]
+ConsentRunner = Callable[[Path, tuple[str, ...], int], GoogleCredentials]
+
+_UNEXPECTED_FAILURE = 'authorization failed before credentials were stored'
 
 
 def _default_consent(
     client_secrets: Path,
     scopes: tuple[str, ...],
+    port: int,
 ) -> GoogleCredentials:
     """Run interactive Google consent."""
-    return run_consent_flow(client_secrets, scopes)
+    return run_consent_flow(client_secrets, scopes, port=port)
+
+
+def _safe_message(exc: BaseException) -> str:
+    """Build secret free message."""
+    if isinstance(exc, GoogleAuthError):
+        return str(exc)
+    if isinstance(exc, OSError):
+        return f'credential path is unusable: {exc.strerror or "os error"}'
+    return _UNEXPECTED_FAILURE
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -77,19 +92,27 @@ def main(
     error_stream = errors if errors is not None else sys.stderr
 
     scopes = SERVICE_SCOPES[args.service]
-    token_path = args.token_path
-    download_path = args.download_path
-    if token_path is None or download_path is None:
-        config = ServiceConfig.from_env(args.service)
-        token_path = token_path or config.google_token_path
-        download_path = download_path or config.download_path
-
     try:
+        token_path = args.token_path
+        download_path = args.download_path
+        if token_path is None or download_path is None:
+            default_token, default_download = resolve_credential_paths(
+                args.service
+            )
+            token_path = token_path or default_token
+            download_path = download_path or default_download
         store = GoogleCredentialStore(token_path, download_path, scopes)
-        credentials = consent_runner(args.client_secrets, scopes)
+        # 1. Prove the target path before any live grant exists
+        store.preflight()
+        validate_client_secrets_path(args.client_secrets)
+        # 2. Obtain the grant
+        credentials = consent_runner(args.client_secrets, scopes, args.port)
+        # 3. Persist it
         store.save(credentials)
-    except (GoogleAuthError, OSError, ValueError) as exc:
-        _emit(error_stream, {'error': str(exc)})
+    except KeyboardInterrupt, SystemExit:
+        raise
+    except Exception as exc:
+        _emit(error_stream, {'error': _safe_message(exc)})
         return 1
 
     _emit(

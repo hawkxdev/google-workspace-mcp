@@ -66,6 +66,22 @@ def _required_path(env: Mapping[str, str], key: str, default: Path) -> Path:
     return Path(value).expanduser()
 
 
+def resolve_credential_paths(service: str) -> tuple[Path, Path]:
+    """Resolve Google credential paths."""
+    # Reject unknown service
+    _default_port(service)
+    prefix = service.upper()
+    env = os.environ
+    state_dir = (_STATE_ROOT / service).expanduser()
+    token_path = _required_path(
+        env, f'{prefix}_GOOGLE_TOKEN_PATH', state_dir / 'google_token.json'
+    )
+    download_path = _required_path(
+        env, f'{prefix}_MCP_DOWNLOAD_PATH', state_dir / 'downloads'
+    )
+    return token_path, download_path
+
+
 def _integer(
     env: Mapping[str, str], key: str, default: int, low: int, high: int
 ) -> int:

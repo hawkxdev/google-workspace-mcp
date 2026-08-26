@@ -71,11 +71,11 @@ class FakeFactory:
     def __init__(self, flow: FakeFlow) -> None:
         """Initialize fake flow factory."""
         self.flow = flow
-        self.calls: list[tuple[str, tuple[str, ...]]] = []
+        self.calls: list[tuple[Any, tuple[str, ...]]] = []
 
-    def __call__(self, secrets_path: str, scopes: Any) -> FakeFlow:
+    def __call__(self, client_config: Any, scopes: Any) -> FakeFlow:
         """Record flow factory call."""
-        self.calls.append((secrets_path, tuple(scopes)))
+        self.calls.append((client_config, tuple(scopes)))
         return self.flow
 
 
@@ -118,7 +118,9 @@ def test_flow_receives_requested_scopes(client_secrets: Path) -> None:
     factory = FakeFactory(flow)
     run_consent_flow(client_secrets, SCOPES, flow_factory=factory)
     assert factory.calls[0][1] == SCOPES
-    assert factory.calls[0][0] == str(client_secrets)
+    assert factory.calls[0][0] == {
+        'installed': {'client_id': 'client-id-value'}
+    }
 
 
 def test_flow_returns_project_credentials(client_secrets: Path) -> None:
@@ -231,12 +233,13 @@ def test_errors_never_expose_secret_values(client_secrets: Path) -> None:
 def test_secrets_file_owned_by_other_user_is_rejected(
     client_secrets: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    real_lstat = os.lstat
+    real_fstat = os.fstat
+    target_inode = os.stat(client_secrets).st_ino
 
-    def fake_lstat(path: Any, **kwargs: Any) -> Any:
+    def fake_fstat(fd: int) -> Any:
         """Report foreign target owner."""
-        result = real_lstat(path, **kwargs)
-        if str(path) == str(client_secrets):
+        result = real_fstat(fd)
+        if result.st_ino == target_inode:
 
             class Foreign:
                 """Expose foreign ownership metadata."""
@@ -248,10 +251,66 @@ def test_secrets_file_owned_by_other_user_is_rejected(
         return result
 
     monkeypatch.setattr(
-        'google_workspace_mcp.google_auth.consent.os.lstat', fake_lstat
+        'google_workspace_mcp.google_auth.consent.os.fstat', fake_fstat
     )
     flow = FakeFlow()
     with pytest.raises(UnsafeCredentialPath):
+        run_consent_flow(
+            client_secrets, SCOPES, flow_factory=FakeFactory(flow)
+        )
+    assert flow.calls == []
+
+
+def test_symlinked_ancestor_directory_is_rejected(
+    tmp_path: Path, client_secrets: Path
+) -> None:
+    linked_root = tmp_path / 'linked'
+    linked_root.symlink_to(client_secrets.parent)
+    flow = FakeFlow()
+    with pytest.raises(UnsafeCredentialPath):
+        run_consent_flow(
+            linked_root / client_secrets.name,
+            SCOPES,
+            flow_factory=FakeFactory(flow),
+        )
+    assert flow.calls == []
+
+
+def test_flow_factory_never_receives_a_path(client_secrets: Path) -> None:
+    flow = FakeFlow()
+    factory = FakeFactory(flow)
+    run_consent_flow(client_secrets, SCOPES, flow_factory=factory)
+    passed = factory.calls[0][0]
+    assert isinstance(passed, dict)
+    assert str(client_secrets) not in repr(passed)
+
+
+def test_library_output_never_reaches_stdout(
+    client_secrets: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class ChattyFlow(FakeFlow):
+        """Print an authorization URL like the library."""
+
+        def run_local_server(self, **kwargs: Any) -> FakeLibraryCredentials:
+            """Print prompt then return credentials."""
+            print('Please visit this URL to authorize: https://accounts...')
+            return super().run_local_server(**kwargs)
+
+    flow = ChattyFlow()
+    run_consent_flow(client_secrets, SCOPES, flow_factory=FakeFactory(flow))
+    captured = capsys.readouterr()
+    assert captured.out == ''
+    assert 'Please visit this URL' in captured.err
+
+
+def test_client_secrets_over_size_limit_is_rejected(
+    client_secrets: Path,
+) -> None:
+    payload = {'installed': {'client_id': 'x' * (64 * 1024)}}
+    client_secrets.write_text(json.dumps(payload))
+    client_secrets.chmod(0o600)
+    flow = FakeFlow()
+    with pytest.raises(UnsafeCredentialPath, match='too large'):
         run_consent_flow(
             client_secrets, SCOPES, flow_factory=FakeFactory(flow)
         )

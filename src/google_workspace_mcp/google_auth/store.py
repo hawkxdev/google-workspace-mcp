@@ -240,6 +240,16 @@ class GoogleCredentialStore:
         finally:
             os.close(credential_fd)
 
+    def preflight(self) -> None:
+        """Prove target path usable."""
+        validate_credential_path(self._path, self._download_path)
+        directory_fd = self._open_target_dir_fd()
+        try:
+            with self._file_lock(directory_fd):
+                pass
+        finally:
+            os.close(directory_fd)
+
     def load(self) -> GoogleCredentials | None:
         """Load stored Google credentials."""
         validate_credential_path(self._path, self._download_path)

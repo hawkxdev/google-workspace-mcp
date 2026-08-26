@@ -16,6 +16,7 @@ from google_workspace_mcp.services.docs.client import (
 from google_workspace_mcp.services.docs.constants import REQUEST_RETRIES
 from google_workspace_mcp.services.docs.errors import (
     DocsConflictError,
+    DocsIndeterminateWriteError,
     DocsInputError,
     DocsNotFoundError,
     DocsProviderError,
@@ -26,6 +27,7 @@ from tests.services.docs_provider import (
     FakeDocsService,
     FakeDocsStore,
     FakeRequest,
+    batch_result,
     document,
     document_with_nested_tabs,
     make_http_error,
@@ -239,17 +241,48 @@ def test_stale_revision_maps_to_conflict(
     status: int,
     reason: str,
 ) -> None:
-    queue_error(fake_service, make_http_error(status, reason))
+    fake_service.queue('get', simple_document())
+    fake_service.queue(
+        'batchUpdate', FakeRequest(error=make_http_error(status, reason))
+    )
     with pytest.raises(DocsConflictError, match='revision'):
+        gateway.insert_text(
+            'document-1',
+            'tab-1',
+            1,
+            'Hello',
+            required_revision_id='revision-1',
+        )
+
+
+@pytest.mark.parametrize('status', [400, 412])
+@pytest.mark.parametrize('reason', ['conditionNotMet', 'FAILED_PRECONDITION'])
+def test_read_precondition_is_not_a_revision_conflict(
+    fake_service: FakeDocsService,
+    gateway: DocsGateway,
+    status: int,
+    reason: str,
+) -> None:
+    queue_error(fake_service, make_http_error(status, reason))
+    with pytest.raises(DocsProviderError) as caught:
         gateway.get_document('document-1')
+    assert not isinstance(caught.value, DocsConflictError)
+    assert 'revision' not in str(caught.value)
 
 
 def test_precondition_status_alone_maps_to_conflict(
     fake_service: FakeDocsService, gateway: DocsGateway
 ) -> None:
-    queue_error(fake_service, make_http_error(412))
+    fake_service.queue('get', simple_document())
+    fake_service.queue('batchUpdate', FakeRequest(error=make_http_error(412)))
     with pytest.raises(DocsConflictError, match='revision'):
-        gateway.get_document('document-1')
+        gateway.insert_text(
+            'document-1',
+            'tab-1',
+            1,
+            'Hello',
+            required_revision_id='revision-1',
+        )
 
 
 def test_forbidden_without_known_reason_maps_to_provider_error(
@@ -333,3 +366,60 @@ def test_legacy_body_is_never_read_by_gateway(
         for element in block.elements
     )
     assert 'Legacy body' not in rendered
+
+
+def test_write_transport_failure_reports_unknown_outcome(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    fake_service.queue('get', simple_document())
+    fake_service.queue(
+        'batchUpdate', FakeRequest(error=TransportError('socket closed'))
+    )
+    with pytest.raises(DocsIndeterminateWriteError) as caught:
+        gateway.insert_text(
+            'document-1',
+            'tab-1',
+            1,
+            'Hello',
+            required_revision_id='revision-1',
+        )
+    assert 'may have been applied' in str(caught.value)
+    assert 'temporarily' not in str(caught.value)
+
+
+def test_read_transport_failure_stays_retryable(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    queue_error(fake_service, TransportError('socket closed'))
+    with pytest.raises(DocsProviderError) as caught:
+        gateway.get_document('document-1')
+    assert not isinstance(caught.value, DocsIndeterminateWriteError)
+    assert 'temporarily' in str(caught.value)
+
+
+def test_write_requests_never_retry(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    fake_service.queue('get', simple_document())
+    fake_service.queue('batchUpdate', batch_result())
+    gateway.insert_text(
+        'document-1', 'tab-1', 1, 'Hello', required_revision_id='revision-1'
+    )
+    writes = [
+        call
+        for call in fake_service.documents_endpoint.calls
+        if call[0] == 'batchUpdate'
+    ]
+    assert writes[0][2].retries == [0]
+
+
+def test_programming_error_is_not_masked_as_credentials(
+    store: FakeDocsStore,
+) -> None:
+    def explode(_: Any) -> Any:
+        """Raise a programming failure."""
+        raise AttributeError("'NoneType' object has no attribute 'token'")
+
+    gateway = DocsGateway(store, service_builder=explode)
+    with pytest.raises(AttributeError):
+        gateway.service()

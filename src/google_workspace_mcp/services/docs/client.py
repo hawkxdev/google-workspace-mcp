@@ -29,6 +29,7 @@ from .constants import (
 from .errors import (
     DocsConflictError,
     DocsError,
+    DocsIndeterminateWriteError,
     DocsInputError,
     DocsNotFoundError,
     DocsProviderError,
@@ -63,6 +64,10 @@ ServiceBuilder = Callable[[GoogleCredentials], Any]
 
 _SUGGESTIONS_VIEW_MODE = 'PREVIEW_WITHOUT_SUGGESTIONS'
 _UNAVAILABLE = 'Docs request is temporarily unavailable'
+_INDETERMINATE = (
+    'Docs write outcome is unknown and may have been applied, reread '
+    'the document and compare its revision before retrying'
+)
 
 _SCOPE_REASONS = frozenset(
     {
@@ -82,6 +87,17 @@ _RATE_LIMIT_REASONS = frozenset(
         'RESOURCE_EXHAUSTED',
     }
 )
+
+_STRIPPED_TEXT = 'Docs text contains characters the provider removes'
+
+
+def _has_stripped_characters(value: str) -> bool:
+    """Detect characters Google removes."""
+    return any(
+        code <= 0x08 or 0x0C <= code <= 0x1F or 0xE000 <= code <= 0xF8FF
+        for code in map(ord, value)
+    )
+
 
 _CONFLICT_REASONS = frozenset(
     {
@@ -170,26 +186,25 @@ def _validate_body_text(value: Any) -> str:
     if (
         not isinstance(value, str)
         or not value
-        or '\x00' in value
         or len(value) > MAX_DOCS_TEXT_CHARS
     ):
         raise DocsInputError(
             f'Docs text must be 1 to {MAX_DOCS_TEXT_CHARS} characters'
         )
+    if _has_stripped_characters(value):
+        raise DocsInputError(_STRIPPED_TEXT)
     return value
 
 
 def _validate_replacement_text(value: Any) -> str:
     """Validate bounded replacement text."""
-    if (
-        not isinstance(value, str)
-        or '\x00' in value
-        or len(value) > MAX_DOCS_TEXT_CHARS
-    ):
+    if not isinstance(value, str) or len(value) > MAX_DOCS_TEXT_CHARS:
         raise DocsInputError(
             f'Docs replacement text must be at most '
             f'{MAX_DOCS_TEXT_CHARS} characters'
         )
+    if _has_stripped_characters(value):
+        raise DocsInputError(_STRIPPED_TEXT)
     return value
 
 
@@ -198,7 +213,7 @@ def _validate_search_literal(value: Any) -> str:
     if (
         not isinstance(value, str)
         or not value
-        or '\x00' in value
+        or _has_stripped_characters(value)
         or '\n' in value
         or '\r' in value
         or len(value) > MAX_DOCS_TEXT_CHARS
@@ -247,6 +262,14 @@ def _validate_title(value: Any) -> str:
 _OPERATION_ADAPTER: TypeAdapter[Any] = TypeAdapter(DocsBatchOperation)
 
 _INVALID_OPERATION = 'Docs batch operation is invalid'
+
+_INDEX_SHIFTING_OPERATIONS = frozenset(
+    {
+        DocsBatchOperationType.INSERT_TEXT,
+        DocsBatchOperationType.DELETE_RANGE,
+        DocsBatchOperationType.INSERT_PAGE_BREAK,
+    }
+)
 
 _NAMED_STYLE_VALUES: dict[DocsNamedStyle, str] = {
     DocsNamedStyle.TITLE: 'TITLE',
@@ -297,7 +320,21 @@ def _validate_operations(operations: Any) -> tuple[Any, ...]:
             validated.append(_OPERATION_ADAPTER.validate_python(item))
         except ValidationError as error:
             raise DocsInputError(_INVALID_OPERATION) from error
+    _reject_shifted_replacement(validated)
     return tuple(validated)
+
+
+def _reject_shifted_replacement(operations: Sequence[Any]) -> None:
+    """Reject replacement after shifts."""
+    kinds = {operation.operation for operation in operations}
+    if DocsBatchOperationType.REPLACE_TEXT not in kinds:
+        return
+    if kinds & _INDEX_SHIFTING_OPERATIONS:
+        raise DocsInputError(
+            'Docs batch cannot combine replace_text with operations that '
+            'shift indices, because the expected occurrence count is '
+            'verified against the supplied revision'
+        )
 
 
 def _text_style_body(operation: Any) -> dict[str, Any]:
@@ -398,6 +435,8 @@ class DocsGateway:
             return self._service_builder(credentials)
         except DocsError:
             raise
+        except TypeError, AttributeError, NameError, IndexError, KeyError:
+            raise
         except Exception:
             raise DocsProviderError(
                 'Docs credentials are unavailable'
@@ -424,7 +463,11 @@ class DocsGateway:
             return None
         return None
 
-    def _translate_http_error(self, error: HttpError) -> Exception:
+    def _translate_http_error(
+        self,
+        error: HttpError,
+        revision_bound: bool,
+    ) -> Exception:
         """Translate provider HTTP error."""
         status = int(getattr(error.resp, 'status', 0))
         reason = self._http_reason(error)
@@ -433,7 +476,9 @@ class DocsGateway:
             return DocsNotFoundError('Docs resource was not found')
 
         if status == 412 or reason in _CONFLICT_REASONS:
-            return DocsConflictError('Docs document revision changed')
+            if revision_bound:
+                return DocsConflictError('Docs document revision changed')
+            return DocsProviderError('Docs rejected a request precondition')
 
         if status == 429 or reason in _RATE_LIMIT_REASONS:
             return DocsRateLimitError('Docs is temporarily rate limited')
@@ -454,13 +499,21 @@ class DocsGateway:
 
         return DocsProviderError(_UNAVAILABLE)
 
-    def _execute_raw(self, request: Any, retries: int) -> Any:
+    def _execute_raw(
+        self,
+        request: Any,
+        retries: int,
+        *,
+        revision_bound: bool = False,
+    ) -> Any:
         """Execute raw Docs request."""
         try:
             return request.execute(num_retries=retries)
         except HttpError as error:
-            raise self._translate_http_error(error) from None
+            raise self._translate_http_error(error, revision_bound) from None
         except TransportError, TimeoutError, ConnectionError, OSError:
+            if revision_bound:
+                raise DocsIndeterminateWriteError(_INDETERMINATE) from None
             raise DocsProviderError(_UNAVAILABLE) from None
 
     def _execute(self, request: Any) -> Mapping[str, Any]:
@@ -469,7 +522,11 @@ class DocsGateway:
 
     def _execute_write(self, request: Any) -> Mapping[str, Any]:
         """Execute mapped write request."""
-        return _mapping(self._execute_raw(request, 0))
+        raw = self._execute_raw(request, 0, revision_bound=True)
+        try:
+            return _mapping(raw)
+        except DocsError:
+            raise DocsIndeterminateWriteError(_INDETERMINATE) from None
 
     def _fetch_document(self, document_id: str) -> Mapping[str, Any]:
         """Fetch complete document resource."""
@@ -552,17 +609,17 @@ class DocsGateway:
             value = control.get('requiredRevisionId')
             if isinstance(value, str) and value:
                 return value
-        raise DocsProviderError('Docs returned an invalid response')
+        raise DocsIndeterminateWriteError(_INDETERMINATE)
 
     @staticmethod
     def _single_reply(data: Mapping[str, Any]) -> Mapping[str, Any]:
         """Read single provider reply."""
         replies = data.get('replies')
         if not isinstance(replies, list) or len(replies) != 1:
-            raise DocsProviderError('Docs returned an invalid response')
+            raise DocsIndeterminateWriteError(_INDETERMINATE)
         reply = replies[0]
         if not isinstance(reply, Mapping):
-            raise DocsProviderError('Docs returned an invalid response')
+            raise DocsIndeterminateWriteError(_INDETERMINATE)
         return reply
 
     def create_document(self, title: str) -> DocsCreateResult:
@@ -866,11 +923,11 @@ class DocsGateway:
         data = self._batch_update(document, requests, revision)
         replies = data.get('replies')
         if not isinstance(replies, list) or len(replies) != len(validated):
-            raise DocsProviderError('Docs returned an invalid response')
+            raise DocsIndeterminateWriteError(_INDETERMINATE)
         normalized: list[DocsBatchReply] = []
         for operation, raw_reply in zip(validated, replies, strict=True):
             if not isinstance(raw_reply, Mapping):
-                raise DocsProviderError('Docs returned an invalid response')
+                raise DocsIndeterminateWriteError(_INDETERMINATE)
             changed: int | None = None
             if operation.operation is DocsBatchOperationType.REPLACE_TEXT:
                 result = raw_reply.get('replaceAllText')

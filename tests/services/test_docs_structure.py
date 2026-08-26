@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from google_workspace_mcp.services.docs.constants import (
@@ -368,3 +370,91 @@ def test_shallow_nested_tables_are_accepted() -> None:
     content = project_tab_content(payload, 'tab-1')
     assert content.blocks[0].kind is DocsBlockKind.TABLE
     assert count_paragraph_matches(payload, 'tab-1', 'Hi', True) == 1
+
+
+def test_zero_block_cap_projects_nothing() -> None:
+    body = [paragraph(1, 'first\n'), paragraph(7, 'second\n')]
+    content = project_tab_content(
+        document([tab('tab-1', body)]), 'tab-1', max_blocks=0
+    )
+    assert content.blocks == ()
+    assert content.truncated is True
+    assert content.next_start_index == 1
+
+
+def header_document(body_text: str, header_text: str) -> dict[str, Any]:
+    """Build document with one header."""
+    return {
+        'documentId': 'document-1',
+        'title': 'Doc',
+        'revisionId': 'revision-1',
+        'tabs': [
+            {
+                'tabProperties': {
+                    'tabId': 'tab-1',
+                    'title': 'Tab',
+                    'index': 0,
+                },
+                'documentTab': {
+                    'body': {'content': [paragraph(1, body_text)]},
+                    'headers': {
+                        'header-1': {'content': [paragraph(1, header_text)]}
+                    },
+                },
+            }
+        ],
+    }
+
+
+def test_replacement_count_includes_header_segments() -> None:
+    payload = header_document('Alpha here\n', 'Alpha in header\n')
+    assert count_paragraph_matches(payload, 'tab-1', 'Alpha', True) == 2
+
+
+def test_replacement_count_covers_body_only_document() -> None:
+    payload = header_document('Alpha here\n', 'nothing\n')
+    assert count_paragraph_matches(payload, 'tab-1', 'Alpha', True) == 1
+
+
+def test_wide_tab_tree_is_rejected_on_the_read_path() -> None:
+    tabs = [
+        {
+            'tabProperties': {
+                'tabId': f'tab-{index}',
+                'title': f't{index}',
+                'index': index,
+            },
+            'documentTab': {'body': {'content': [paragraph(1, 'x\n')]}},
+        }
+        for index in range(MAX_DOCS_TABS + 1)
+    ]
+    payload = {
+        'documentId': 'document-1',
+        'title': 'Doc',
+        'revisionId': 'revision-1',
+        'tabs': tabs,
+    }
+    with pytest.raises(DocsProviderError):
+        project_tab_content(payload, f'tab-{MAX_DOCS_TABS}')
+
+
+def test_narrow_tab_tree_still_reads_on_the_read_path() -> None:
+    tabs = [
+        {
+            'tabProperties': {
+                'tabId': f'tab-{index}',
+                'title': f't{index}',
+                'index': index,
+            },
+            'documentTab': {'body': {'content': [paragraph(1, 'x\n')]}},
+        }
+        for index in range(MAX_DOCS_TABS)
+    ]
+    payload = {
+        'documentId': 'document-1',
+        'title': 'Doc',
+        'revisionId': 'revision-1',
+        'tabs': tabs,
+    }
+    content = project_tab_content(payload, f'tab-{MAX_DOCS_TABS - 1}')
+    assert content.tab_id == f'tab-{MAX_DOCS_TABS - 1}'

@@ -33,3 +33,7 @@ class DocsScopeError(DocsError):
 
 class DocsUnsupportedError(DocsError):
     """Reject unsupported document structure."""
+
+
+class DocsIndeterminateWriteError(DocsError):
+    """Report unknown write outcome."""

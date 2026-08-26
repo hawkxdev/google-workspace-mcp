@@ -10,9 +10,9 @@ from google_workspace_mcp.services.docs.client import DocsGateway
 from google_workspace_mcp.services.docs.constants import MAX_DOCS_TEXT_CHARS
 from google_workspace_mcp.services.docs.errors import (
     DocsConflictError,
+    DocsIndeterminateWriteError,
     DocsInputError,
     DocsNotFoundError,
-    DocsProviderError,
 )
 from tests.services.docs_provider import (
     EMOJI,
@@ -217,7 +217,9 @@ def test_missing_next_revision_fails_closed(
     fake_service: FakeDocsService, gateway: DocsGateway
 ) -> None:
     stage(fake_service, result={'documentId': 'document-1', 'replies': []})
-    with pytest.raises(DocsProviderError):
+    with pytest.raises(
+        DocsIndeterminateWriteError, match='outcome is unknown'
+    ):
         gateway.insert_text(
             'document-1',
             'tab-1',
@@ -580,3 +582,104 @@ def test_replace_text_rejects_stale_revision(
             expected_occurrences=1,
         )
     assert fake_service.calls_for('batchUpdate') == []
+
+
+def table_document() -> dict[str, Any]:
+    """Build one table document."""
+    return document([tab('tab-1', [table(1, ('A' + EMOJI + 'B',))])])
+
+
+def test_insert_into_table_structure_is_rejected(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    fake_service.queue('get', table_document())
+    with pytest.raises(DocsInputError, match='addressable paragraph text'):
+        gateway.insert_text(
+            'document-1', 'tab-1', 1, 'X', required_revision_id='revision-1'
+        )
+    assert not [
+        call
+        for call in fake_service.documents_endpoint.calls
+        if call[0] == 'batchUpdate'
+    ]
+
+
+def test_insert_inside_cell_text_is_allowed(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    fake_service.queue('get', table_document())
+    fake_service.queue('batchUpdate', batch_result())
+    result = gateway.insert_text(
+        'document-1', 'tab-1', 4, 'X', required_revision_id='revision-1'
+    )
+    assert result.required_revision_id == 'revision-2'
+
+
+def test_insert_splitting_surrogate_inside_cell_is_rejected(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    fake_service.queue('get', table_document())
+    with pytest.raises(DocsInputError, match='UTF-16 boundary'):
+        gateway.insert_text(
+            'document-1', 'tab-1', 6, 'X', required_revision_id='revision-1'
+        )
+    assert not [
+        call
+        for call in fake_service.documents_endpoint.calls
+        if call[0] == 'batchUpdate'
+    ]
+
+
+def test_delete_crossing_table_boundary_is_rejected(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    fake_service.queue('get', table_document())
+    with pytest.raises(DocsInputError, match='protected structural'):
+        gateway.delete_range(
+            'document-1', 'tab-1', 1, 5, required_revision_id='revision-1'
+        )
+    assert not [
+        call
+        for call in fake_service.documents_endpoint.calls
+        if call[0] == 'batchUpdate'
+    ]
+
+
+def test_delete_inside_cell_text_is_allowed(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    fake_service.queue('get', table_document())
+    fake_service.queue('batchUpdate', batch_result())
+    result = gateway.delete_range(
+        'document-1', 'tab-1', 4, 5, required_revision_id='revision-1'
+    )
+    assert result.required_revision_id == 'revision-2'
+
+
+@pytest.mark.parametrize(
+    'value', ['a\x01b', 'a\x08b', 'a\x0cb', 'a\x1fb', 'ab', 'ab']
+)
+def test_stripped_characters_are_refused_before_provider(
+    fake_service: FakeDocsService, gateway: DocsGateway, value: str
+) -> None:
+    with pytest.raises(DocsInputError, match='provider removes'):
+        gateway.insert_text(
+            'document-1',
+            'tab-1',
+            1,
+            value,
+            required_revision_id='revision-1',
+        )
+    assert fake_service.documents_endpoint.calls == []
+
+
+@pytest.mark.parametrize('value', ['a\tb', 'a\nb', 'plain'])
+def test_characters_google_keeps_are_accepted(
+    fake_service: FakeDocsService, gateway: DocsGateway, value: str
+) -> None:
+    fake_service.queue('get', simple_document())
+    fake_service.queue('batchUpdate', batch_result())
+    result = gateway.insert_text(
+        'document-1', 'tab-1', 1, value, required_revision_id='revision-1'
+    )
+    assert result.required_revision_id == 'revision-2'

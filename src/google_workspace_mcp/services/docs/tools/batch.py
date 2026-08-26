@@ -34,9 +34,14 @@ def register_batch_tools(
         title='Apply Document Batch',
         description=(
             'Apply up to twenty typed operations to one explicit tab in a '
-            'single atomic request under the supplied revision. Operations '
-            'run in the given order and later ones observe earlier index '
-            'shifts. Raw provider requests are refused.'
+            'single atomic request under the supplied revision. The '
+            'provider runs them in the given order, so later operations '
+            'observe earlier index shifts, while every index is validated '
+            'against the supplied revision only. Supply indices for the '
+            'state described by that revision, and split work into '
+            'successive calls when an operation depends on an earlier '
+            'shift. Replacement cannot be combined with operations that '
+            'shift indices. Raw provider requests are refused.'
         ),
         annotations=mutating,
         structured_output=True,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -97,6 +98,7 @@ def test_every_service_keeps_a_separate_token_file(workspace: Path) -> None:
         def consent(
             secrets: Path,
             requested: tuple[str, ...],
+            port: int = 0,
             granted: tuple[str, ...] = scopes,
         ) -> GoogleCredentials:
             """Return granted fake credentials."""
@@ -112,7 +114,9 @@ def test_every_service_keeps_a_separate_token_file(workspace: Path) -> None:
 
 
 def test_credentials_are_persisted_through_store(workspace: Path) -> None:
-    def consent(secrets: Path, requested: tuple[str, ...]) -> Any:
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
         """Return granted fake credentials."""
         return credentials_for(DOCS_SCOPES)
 
@@ -125,7 +129,9 @@ def test_credentials_are_persisted_through_store(workspace: Path) -> None:
 
 
 def test_token_file_is_owner_only(workspace: Path) -> None:
-    def consent(secrets: Path, requested: tuple[str, ...]) -> Any:
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
         """Return granted fake credentials."""
         return credentials_for(DOCS_SCOPES)
 
@@ -137,7 +143,9 @@ def test_token_file_is_owner_only(workspace: Path) -> None:
 def test_consent_receives_service_scopes(workspace: Path) -> None:
     seen: dict[str, Any] = {}
 
-    def consent(secrets: Path, requested: tuple[str, ...]) -> Any:
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
         """Record requested consent scopes."""
         seen['secrets'] = secrets
         seen['requested'] = requested
@@ -150,7 +158,9 @@ def test_consent_receives_service_scopes(workspace: Path) -> None:
 
 
 def test_summary_never_prints_secret_values(workspace: Path) -> None:
-    def consent(secrets: Path, requested: tuple[str, ...]) -> Any:
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
         """Return granted fake credentials."""
         return credentials_for(DOCS_SCOPES)
 
@@ -163,7 +173,9 @@ def test_summary_never_prints_secret_values(workspace: Path) -> None:
 
 
 def test_summary_reports_verifiable_facts(workspace: Path) -> None:
-    def consent(secrets: Path, requested: tuple[str, ...]) -> Any:
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
         """Return granted fake credentials."""
         return credentials_for(DOCS_SCOPES)
 
@@ -176,7 +188,9 @@ def test_summary_reports_verifiable_facts(workspace: Path) -> None:
 
 
 def test_reduced_grant_writes_no_token(workspace: Path) -> None:
-    def consent(secrets: Path, requested: tuple[str, ...]) -> Any:
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
         """Raise reduced scope failure."""
         raise ScopeMismatchError('consent granted fewer scopes than required')
 
@@ -187,7 +201,9 @@ def test_reduced_grant_writes_no_token(workspace: Path) -> None:
 
 
 def test_consent_failure_reports_without_traceback(workspace: Path) -> None:
-    def consent(secrets: Path, requested: tuple[str, ...]) -> Any:
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
         """Raise transport style failure."""
         raise OSError('connection to accounts.google.com refused')
 
@@ -198,9 +214,135 @@ def test_consent_failure_reports_without_traceback(workspace: Path) -> None:
 
 
 def test_unknown_service_is_rejected(workspace: Path) -> None:
-    def consent(secrets: Path, requested: tuple[str, ...]) -> Any:
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
         """Fail if consent runs."""
         raise AssertionError('consent must not run')
 
     with pytest.raises(SystemExit):
         run_cli(workspace, 'contacts', consent)
+
+
+def test_documented_command_runs_without_service_environment(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for key in list(os.environ):
+        if '_MCP_' in key or key.endswith('_GOOGLE_TOKEN_PATH'):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(
+        'google_workspace_mcp.common.config._STATE_ROOT', workspace / 'state'
+    )
+    seen: dict[str, Any] = {}
+
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
+        """Record that consent was reached."""
+        seen['reached'] = True
+        return credentials_for(DOCS_SCOPES)
+
+    out = io.StringIO()
+    err = io.StringIO()
+    code = main(
+        [
+            '--service',
+            'docs',
+            '--client-secrets',
+            str(workspace / 'client_secret.json'),
+        ],
+        out=out,
+        errors=err,
+        consent_runner=consent,
+    )
+    assert code == 0
+    assert seen.get('reached') is True
+    assert json.loads(out.getvalue())['token_path'].endswith(
+        'google_token.json'
+    )
+
+
+def test_unusable_token_path_fails_before_consent(workspace: Path) -> None:
+    calls: list[Path] = []
+
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
+        """Record that consent was reached."""
+        calls.append(secrets)
+        return credentials_for(DOCS_SCOPES)
+
+    blocked = workspace / 'blocked'
+    blocked.mkdir(mode=0o755)
+    out = io.StringIO()
+    err = io.StringIO()
+    code = main(
+        [
+            '--service',
+            'docs',
+            '--client-secrets',
+            str(workspace / 'client_secret.json'),
+            '--token-path',
+            str(blocked / 'token.json'),
+            '--download-path',
+            str(workspace / 'downloads'),
+        ],
+        out=out,
+        errors=err,
+        consent_runner=consent,
+    )
+    assert calls == []
+    assert code == 1
+    assert out.getvalue() == ''
+    assert not (blocked / 'token.json').exists()
+
+
+def test_unknown_failure_message_carries_no_payload(
+    workspace: Path,
+) -> None:
+    class OAuthLibStyle(Exception):
+        """Represent a foreign library failure."""
+
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
+        """Raise a foreign library failure."""
+        raise OAuthLibStyle(
+            '(mismatching_state) authorization_response=code=SECRET123'
+        )
+
+    code, out, err = run_cli(workspace, 'docs', consent)
+    assert code == 1
+    assert out == ''
+    assert 'SECRET123' not in err
+    assert 'authorization_response' not in err
+
+
+def test_os_error_message_hides_owner_path(workspace: Path) -> None:
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
+        """Raise a filesystem failure naming a path."""
+        raise FileNotFoundError(
+            2, 'No such file or directory', '/Users/owner/secrets/value.json'
+        )
+
+    code, _, err = run_cli(workspace, 'docs', consent)
+    assert code == 1
+    assert '/Users/owner/secrets/value.json' not in err
+    assert 'No such file or directory' in json.loads(err)['error']
+
+
+def test_port_argument_reaches_consent_runner(workspace: Path) -> None:
+    seen: dict[str, Any] = {}
+
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
+        """Record the forwarded port."""
+        seen['port'] = port
+        return credentials_for(DOCS_SCOPES)
+
+    code, _, _ = run_cli(workspace, 'docs', consent, extra=['--port', '8765'])
+    assert code == 0
+    assert seen['port'] == 8765
