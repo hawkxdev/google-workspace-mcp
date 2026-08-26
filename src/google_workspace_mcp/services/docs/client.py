@@ -90,6 +90,18 @@ _RATE_LIMIT_REASONS = frozenset(
 
 _STRIPPED_TEXT = 'Docs text contains characters the provider removes'
 
+_PROGRAMMING_ERRORS = (
+    TypeError,
+    AttributeError,
+    NameError,
+    IndexError,
+    KeyError,
+    AssertionError,
+    NotImplementedError,
+    RecursionError,
+    UnboundLocalError,
+)
+
 
 def _has_stripped_characters(value: str) -> bool:
     """Detect characters Google removes."""
@@ -106,6 +118,16 @@ _CONFLICT_REASONS = frozenset(
         'FAILED_PRECONDITION',
     }
 )
+
+
+def _after_write[T](parse: Callable[[], T]) -> T:
+    """Guard parsing after write."""
+    try:
+        return parse()
+    except DocsIndeterminateWriteError:
+        raise
+    except DocsError:
+        raise DocsIndeterminateWriteError(_INDETERMINATE) from None
 
 
 def build_docs_service(credentials: GoogleCredentials) -> Any:
@@ -268,6 +290,8 @@ _INDEX_SHIFTING_OPERATIONS = frozenset(
         DocsBatchOperationType.INSERT_TEXT,
         DocsBatchOperationType.DELETE_RANGE,
         DocsBatchOperationType.INSERT_PAGE_BREAK,
+        DocsBatchOperationType.CREATE_BULLETS,
+        DocsBatchOperationType.DELETE_BULLETS,
     }
 )
 
@@ -326,10 +350,17 @@ def _validate_operations(operations: Any) -> tuple[Any, ...]:
 
 def _reject_shifted_replacement(operations: Sequence[Any]) -> None:
     """Reject replacement after shifts."""
-    kinds = {operation.operation for operation in operations}
-    if DocsBatchOperationType.REPLACE_TEXT not in kinds:
+    kinds = [operation.operation for operation in operations]
+    replacements = kinds.count(DocsBatchOperationType.REPLACE_TEXT)
+    if not replacements:
         return
-    if kinds & _INDEX_SHIFTING_OPERATIONS:
+    if replacements > 1:
+        raise DocsInputError(
+            'Docs batch accepts at most one replace_text, because each '
+            'expected occurrence count is verified against the supplied '
+            'revision and an earlier replacement can change later matches'
+        )
+    if set(kinds) & _INDEX_SHIFTING_OPERATIONS:
         raise DocsInputError(
             'Docs batch cannot combine replace_text with operations that '
             'shift indices, because the expected occurrence count is '
@@ -435,7 +466,7 @@ class DocsGateway:
             return self._service_builder(credentials)
         except DocsError:
             raise
-        except TypeError, AttributeError, NameError, IndexError, KeyError:
+        except _PROGRAMMING_ERRORS:
             raise
         except Exception:
             raise DocsProviderError(
@@ -467,6 +498,7 @@ class DocsGateway:
         self,
         error: HttpError,
         revision_bound: bool,
+        write: bool = False,
     ) -> Exception:
         """Translate provider HTTP error."""
         status = int(getattr(error.resp, 'status', 0))
@@ -497,6 +529,10 @@ class DocsGateway:
         if status == 403:
             return DocsProviderError('Docs request was forbidden')
 
+        # A write that reached the provider has an unknown outcome above 4xx
+        if write and status >= 500:
+            return DocsIndeterminateWriteError(_INDETERMINATE)
+
         return DocsProviderError(_UNAVAILABLE)
 
     def _execute_raw(
@@ -505,14 +541,17 @@ class DocsGateway:
         retries: int,
         *,
         revision_bound: bool = False,
+        write: bool = False,
     ) -> Any:
         """Execute raw Docs request."""
         try:
             return request.execute(num_retries=retries)
         except HttpError as error:
-            raise self._translate_http_error(error, revision_bound) from None
+            raise self._translate_http_error(
+                error, revision_bound, write
+            ) from None
         except TransportError, TimeoutError, ConnectionError, OSError:
-            if revision_bound:
+            if write:
                 raise DocsIndeterminateWriteError(_INDETERMINATE) from None
             raise DocsProviderError(_UNAVAILABLE) from None
 
@@ -520,13 +559,17 @@ class DocsGateway:
         """Execute mapped Docs request."""
         return _mapping(self._execute_raw(request, self._num_retries))
 
-    def _execute_write(self, request: Any) -> Mapping[str, Any]:
+    def _execute_write(
+        self,
+        request: Any,
+        *,
+        revision_bound: bool = True,
+    ) -> Mapping[str, Any]:
         """Execute mapped write request."""
-        raw = self._execute_raw(request, 0, revision_bound=True)
-        try:
-            return _mapping(raw)
-        except DocsError:
-            raise DocsIndeterminateWriteError(_INDETERMINATE) from None
+        raw = self._execute_raw(
+            request, 0, revision_bound=revision_bound, write=True
+        )
+        return _after_write(lambda: _mapping(raw))
 
     def _fetch_document(self, document_id: str) -> Mapping[str, Any]:
         """Fetch complete document resource."""
@@ -622,20 +665,23 @@ class DocsGateway:
             raise DocsIndeterminateWriteError(_INDETERMINATE)
         return reply
 
+    def _created_summary(self, data: Mapping[str, Any]) -> DocumentSummary:
+        """Summarize created document tabs."""
+        tabs = data.get('tabs')
+        if isinstance(tabs, list) and tabs:
+            return parse_document_tabs(data)
+        document_id = data.get('documentId')
+        if not isinstance(document_id, str) or not document_id:
+            raise DocsProviderError('Docs returned an invalid response')
+        return parse_document_tabs(self._fetch_document(document_id))
+
     def create_document(self, title: str) -> DocsCreateResult:
         """Create new empty document."""
         validated = _validate_title(title)
         service = self.service()
         request = service.documents().create(body={'title': validated})
-        data = self._execute_write(request)
-        tabs = data.get('tabs')
-        if isinstance(tabs, list) and tabs:
-            summary = parse_document_tabs(data)
-        else:
-            document_id = data.get('documentId')
-            if not isinstance(document_id, str) or not document_id:
-                raise DocsProviderError('Docs returned an invalid response')
-            summary = parse_document_tabs(self._fetch_document(document_id))
+        data = self._execute_write(request, revision_bound=False)
+        summary = _after_write(lambda: self._created_summary(data))
         return DocsCreateResult(
             document_id=summary.document_id,
             title=summary.title,
@@ -760,6 +806,16 @@ class DocsGateway:
             ),
             revision,
         )
+        changed = _after_write(lambda: self._replaced_count(data))
+        return DocsReplaceResult(
+            document_id=document,
+            tab_id=tab,
+            occurrences_changed=changed,
+            required_revision_id=self._next_revision(data),
+        )
+
+    def _replaced_count(self, data: Mapping[str, Any]) -> int:
+        """Read replaced occurrence count."""
         reply = self._single_reply(data)
         result = reply.get('replaceAllText')
         if not isinstance(result, Mapping):
@@ -769,12 +825,7 @@ class DocsGateway:
             raise DocsProviderError('Docs returned an invalid response')
         if changed < 0:
             raise DocsProviderError('Docs returned an invalid response')
-        return DocsReplaceResult(
-            document_id=document,
-            tab_id=tab,
-            occurrences_changed=changed,
-            required_revision_id=self._next_revision(data),
-        )
+        return changed
 
     def _build_batch_request(
         self,
@@ -921,6 +972,23 @@ class DocsGateway:
             for operation in validated
         ]
         data = self._batch_update(document, requests, revision)
+        normalized = _after_write(
+            lambda: self._normalized_replies(data, validated)
+        )
+        return DocsBatchResult(
+            document_id=document,
+            tab_id=tab,
+            operation_count=len(validated),
+            required_revision_id=self._next_revision(data),
+            replies=tuple(normalized),
+        )
+
+    def _normalized_replies(
+        self,
+        data: Mapping[str, Any],
+        validated: Sequence[Any],
+    ) -> list[DocsBatchReply]:
+        """Normalize provider batch replies."""
         replies = data.get('replies')
         if not isinstance(replies, list) or len(replies) != len(validated):
             raise DocsIndeterminateWriteError(_INDETERMINATE)
@@ -951,10 +1019,4 @@ class DocsGateway:
                     occurrences_changed=changed,
                 )
             )
-        return DocsBatchResult(
-            document_id=document,
-            tab_id=tab,
-            operation_count=len(validated),
-            required_revision_id=self._next_revision(data),
-            replies=tuple(normalized),
-        )
+        return normalized

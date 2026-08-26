@@ -29,6 +29,7 @@ from tests.services.docs_provider import (
     simple_document,
     tab,
     table,
+    text_run,
 )
 
 
@@ -81,7 +82,7 @@ def test_read_content_propagates_document_revision(
 def test_read_content_returns_typed_table(
     fake_service: FakeDocsService, gateway: DocsGateway
 ) -> None:
-    payload = document([tab('tab-1', [table(1, ('Left\n', 'Right\n'))])])
+    payload = document([tab('tab-1', [table(1, ('Left', 'Right'))])])
     fake_service.queue('get', payload)
     content = gateway.read_content('document-1', 'tab-1')
     block = content.blocks[0]
@@ -311,3 +312,104 @@ def test_clip_never_splits_a_surrogate_pair(
     assert content.truncated is True
     assert kept == EMOJI * 2
     assert content.text_characters == 4
+
+
+def test_continuation_advances_inside_one_paragraph(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    payload = document([tab('tab-1', [paragraph(1, 'abcdefghij\n')])])
+    seen: list[str] = []
+    cursor: int | None = None
+    for _ in range(3):
+        fake_service.queue('get', payload)
+        content = gateway.read_content(
+            'document-1', 'tab-1', start_index=cursor, max_chars=4
+        )
+        seen.append(
+            ''.join(
+                element.content or ''
+                for block in content.blocks
+                if isinstance(block, DocsParagraphBlock)
+                for element in block.elements
+            )
+        )
+        if content.next_start_index is None:
+            break
+        cursor = content.next_start_index
+    assert seen == ['abcd', 'efgh', 'ij\n']
+
+
+def test_continuation_advances_inside_one_table(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    payload = document(
+        [tab('tab-1', [table(1, tuple(f'c{index}' for index in range(20)))])]
+    )
+    cursors: list[int | None] = []
+    cursor: int | None = None
+    for _ in range(3):
+        fake_service.queue('get', payload)
+        content = gateway.read_content(
+            'document-1', 'tab-1', start_index=cursor, max_chars=6
+        )
+        cursors.append(content.next_start_index)
+        cursor = content.next_start_index
+    assert len(set(cursors)) == len(cursors)
+    assert all(value is not None for value in cursors)
+
+
+def test_character_budget_below_one_character_is_refused(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    payload = document([tab('tab-1', [paragraph(1, EMOJI + 'tail\n')])])
+    fake_service.queue('get', payload)
+    with pytest.raises(DocsInputError, match='too small'):
+        gateway.read_content('document-1', 'tab-1', max_chars=1)
+
+
+def test_continuation_omits_already_returned_elements(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    runs = [text_run(1, 'aaaa'), text_run(5, 'bbbb'), text_run(9, 'cc\n')]
+    block = {
+        'startIndex': 1,
+        'endIndex': 12,
+        'paragraph': {'elements': runs, 'paragraphStyle': {}},
+    }
+    fake_service.queue('get', document([tab('tab-1', [block])]))
+    content = gateway.read_content(
+        'document-1', 'tab-1', start_index=5, max_chars=4
+    )
+    elements = [
+        element
+        for projected in content.blocks
+        if isinstance(projected, DocsParagraphBlock)
+        for element in projected.elements
+    ]
+    assert len(elements) == 1
+    assert elements[0].content == 'bbbb'
+    assert elements[0].start_index == 5
+
+
+def test_continuation_omits_already_returned_cells(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    payload = document(
+        [tab('tab-1', [table(1, tuple(f'c{index}' for index in range(6)))])]
+    )
+    fake_service.queue('get', payload)
+    first = gateway.read_content('document-1', 'tab-1', max_chars=6)
+    assert first.next_start_index is not None
+    fake_service.queue('get', payload)
+    second = gateway.read_content(
+        'document-1', 'tab-1', start_index=first.next_start_index
+    )
+    cells = [
+        cell
+        for block in second.blocks
+        if isinstance(block, DocsTableBlock)
+        for row in block.rows
+        for cell in row.cells
+    ]
+    assert cells
+    assert all(cell.end_index > first.next_start_index for cell in cells)

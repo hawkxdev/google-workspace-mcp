@@ -346,3 +346,86 @@ def test_port_argument_reaches_consent_runner(workspace: Path) -> None:
     code, _, _ = run_cli(workspace, 'docs', consent, extra=['--port', '8765'])
     assert code == 0
     assert seen['port'] == 8765
+
+
+def test_os_error_message_carries_only_the_error_name(
+    workspace: Path,
+) -> None:
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
+        """Raise a filesystem failure carrying a payload."""
+        raise OSError(5, 'authorization_response=code=SECRET123')
+
+    code, _, err = run_cli(workspace, 'docs', consent)
+    assert code == 1
+    assert 'SECRET123' not in err
+    assert 'authorization_response' not in err
+    assert json.loads(err)['error'] == (
+        f'credential path is unusable: {os.strerror(5)}'
+    )
+
+
+def test_explicit_token_path_ignores_its_environment_variable(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv('DOCS_GOOGLE_TOKEN_PATH', '   ')
+    reached: list[Path] = []
+
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
+        """Record that consent was reached."""
+        reached.append(secrets)
+        return credentials_for(DOCS_SCOPES)
+
+    code, _, _ = run_cli(workspace, 'docs', consent)
+    assert code == 0
+    assert reached
+
+
+@pytest.mark.parametrize('port', ['-1', '65536', 'abc'])
+def test_out_of_range_port_is_refused_by_the_parser(
+    workspace: Path, port: str
+) -> None:
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port_value: int = 0
+    ) -> Any:
+        """Fail if consent runs."""
+        raise AssertionError('consent must not run')
+
+    with pytest.raises(SystemExit):
+        run_cli(workspace, 'docs', consent, extra=['--port', port])
+
+
+def test_missing_secrets_leaves_no_state_behind(tmp_path: Path) -> None:
+    root = tmp_path / 'fresh'
+    calls: list[Path] = []
+
+    def consent(
+        secrets: Path, requested: tuple[str, ...], port: int = 0
+    ) -> Any:
+        """Record that consent was reached."""
+        calls.append(secrets)
+        return credentials_for(DOCS_SCOPES)
+
+    out = io.StringIO()
+    err = io.StringIO()
+    code = main(
+        [
+            '--service',
+            'docs',
+            '--client-secrets',
+            str(root / 'absent.json'),
+            '--token-path',
+            str(root / 'state' / 'token.json'),
+            '--download-path',
+            str(root / 'state' / 'downloads'),
+        ],
+        out=out,
+        errors=err,
+        consent_runner=consent,
+    )
+    assert code == 1
+    assert calls == []
+    assert not root.exists()

@@ -78,7 +78,7 @@ def table(start: int, cell_texts: tuple[str, ...]) -> dict[str, Any]:
     cells = []
     for content in cell_texts:
         cell_start = cursor
-        inner = paragraph(cell_start + 1, content)
+        inner = paragraph(cell_start + 1, content + '\n')
         cursor = inner['endIndex'] + 1
         cells.append(
             {

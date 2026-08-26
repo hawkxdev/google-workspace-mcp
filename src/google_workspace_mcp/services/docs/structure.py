@@ -102,6 +102,11 @@ def _inside_one_text_span(
     )
 
 
+def _contains(span: DocsSpan, start_index: int, end_index: int) -> bool:
+    """Check span contains range."""
+    return span.start_index <= start_index and end_index <= span.end_index
+
+
 def _protected_conflict(
     segment: DocsSegment,
     start_index: int,
@@ -117,12 +122,35 @@ def _protected_conflict(
             span.start_index >= start_index and span.end_index <= end_index
         )
         if span.kind is DocsSpanKind.CONTAINER:
-            if covered or _inside_one_text_span(
-                segment, start_index, end_index
+            # An enclosing container is crossed legitimately when the range
+            # stays inside one of its addressable parts
+            if (
+                covered
+                or _inside_one_text_span(segment, start_index, end_index)
+                or _inside_one_part(segment, span, start_index, end_index)
             ):
                 continue
             return True
         if not covered:
+            return True
+    return False
+
+
+def _inside_one_part(
+    segment: DocsSegment,
+    container: DocsSpan,
+    start_index: int,
+    end_index: int,
+) -> bool:
+    """Check nested part containment."""
+    for span in segment.spans:
+        if span is container or span.kind is DocsSpanKind.TEXT:
+            continue
+        if not _contains(container, span.start_index, span.end_index):
+            continue
+        if span.kind is DocsSpanKind.CONTAINER and _contains(
+            span, start_index, end_index
+        ):
             return True
     return False
 
@@ -405,6 +433,24 @@ def _structural_text(element: Mapping[str, Any]) -> str:
     return ''.join(_element_text(_require_mapping(item)) for item in elements)
 
 
+def _require_terminal_newline(
+    paragraph: Mapping[str, Any],
+    block_end: int,
+) -> None:
+    """Require closing paragraph newline."""
+    items = _require_sequence(paragraph.get('elements') or ())
+    if not items:
+        return
+    last = _require_mapping(items[-1])
+    if _element_bounds(last)[1] != block_end:
+        raise DocsProviderError(_INVALID_RESPONSE)
+    if _element_kind(last) is not DocsElementKind.TEXT_RUN:
+        raise DocsProviderError(_INVALID_RESPONSE)
+    content = _require_mapping(last['textRun']).get('content')
+    if not isinstance(content, str) or not content.endswith('\n'):
+        raise DocsProviderError(_INVALID_RESPONSE)
+
+
 def _paragraph_spans(
     element: Mapping[str, Any],
     spans: list[DocsSpan],
@@ -412,6 +458,7 @@ def _paragraph_spans(
     """Collect paragraph span entries."""
     _, block_end = _element_bounds(element)
     paragraph = _require_mapping(element['paragraph'])
+    _require_terminal_newline(paragraph, block_end)
     for raw_item in _require_sequence(paragraph.get('elements') or ()):
         item = _require_mapping(raw_item)
         item_start, item_end = _element_bounds(item)
@@ -548,6 +595,19 @@ def build_tab_segment(
 # Typed block projection
 
 
+def _drop_utf16_prefix(value: str, units: int) -> str:
+    """Drop leading UTF-16 units."""
+    if units <= 0:
+        return value
+    encoded = value.encode('utf-16-le')
+    if units * 2 >= len(encoded):
+        return ''
+    try:
+        return encoded[units * 2 :].decode('utf-16-le')
+    except UnicodeDecodeError:
+        return encoded[(units + 1) * 2 :].decode('utf-16-le')
+
+
 def _clip_utf16(value: str, units: int) -> str:
     """Clip text to units."""
     if units <= 0:
@@ -565,13 +625,19 @@ def _clip_utf16(value: str, units: int) -> str:
 class _Budget:
     """Track bounded projection budget."""
 
-    def __init__(self, characters: int, nodes: int) -> None:
+    def __init__(self, characters: int, nodes: int, floor: int = 0) -> None:
         """Initialize projection budget."""
         self.characters = max(characters, 0)
         self.nodes = max(nodes, 0)
+        self.floor = floor
         self.spent = 0
         self.exhausted = False
+        self.starved = False
         self.next_start: int | None = None
+
+    def skips(self, end_index: int) -> bool:
+        """Check node before floor."""
+        return end_index <= self.floor
 
     def stop(self, index: int) -> None:
         """Record first omitted index."""
@@ -598,6 +664,8 @@ class _Budget:
         clipped = _clip_utf16(value, allowed)
         taken = utf16_length(clipped)
         self.characters = 0
+        if taken == 0 and self.spent == 0:
+            self.starved = True
         self.spent += taken
         self.stop(start + taken)
         return clipped
@@ -618,7 +686,12 @@ def _project_element(
         content = run.get('content')
         if not isinstance(content, str):
             raise DocsProviderError(_INVALID_RESPONSE)
+        if start < budget.floor:
+            content = _drop_utf16_prefix(content, budget.floor - start)
+            start = budget.floor
         kept = budget.take_text(content, start)
+        if not kept and budget.exhausted:
+            return None
         return DocsTextElement(
             kind=kind,
             start_index=start,
@@ -654,16 +727,17 @@ def _project_paragraph(
         )
     elements: list[DocsTextElement] = []
     for item in _require_sequence(paragraph.get('elements') or ()):
-        projected = _project_element(
-            _require_mapping(item), unsupported, budget
-        )
+        node = _require_mapping(item)
+        if budget.skips(_element_bounds(node)[1]):
+            continue
+        projected = _project_element(node, unsupported, budget)
         if projected is None:
             break
         elements.append(projected)
         if budget.exhausted:
             break
     return DocsParagraphBlock(
-        start_index=start,
+        start_index=elements[0].start_index if elements else start,
         end_index=elements[-1].end_index if elements else start,
         named_style=named_style,
         bullet=bullet,
@@ -682,7 +756,9 @@ def _project_cell(
     blocks: list[DocsBlock] = []
     for raw_block in _require_sequence(cell.get('content') or ()):
         block = _require_mapping(raw_block)
-        block_start, _ = _element_bounds(block)
+        block_start, block_end = _element_bounds(block)
+        if budget.skips(block_end):
+            continue
         if not budget.take_node(block_start):
             break
         blocks.append(_project_block(block, unsupported, budget, depth + 1))
@@ -708,12 +784,16 @@ def _project_table(
     for raw_row in _require_sequence(payload.get('tableRows') or ()):
         row = _require_mapping(raw_row)
         row_start, row_end = _element_bounds(row)
+        if budget.skips(row_end):
+            continue
         if not budget.take_node(row_start):
             break
         cells: list[DocsTableCell] = []
         for raw_cell in _require_sequence(row.get('tableCells') or ()):
             cell = _require_mapping(raw_cell)
-            cell_start, _ = _element_bounds(cell)
+            cell_start, cell_end = _element_bounds(cell)
+            if budget.skips(cell_end):
+                continue
             if not budget.take_node(cell_start):
                 break
             cells.append(_project_cell(cell, unsupported, budget, depth))
@@ -804,7 +884,8 @@ def project_tab_content(
     selected = _selected_elements(content, start_index, end_index)
     unsupported: set[str] = set()
     blocks: list[DocsBlock] = []
-    budget = _Budget(max_chars, MAX_DOCS_NODES)
+    floor = start_index if start_index is not None else 0
+    budget = _Budget(max_chars, MAX_DOCS_NODES, floor)
     for element in selected:
         element_start, _ = _element_bounds(element)
         if len(blocks) >= max_blocks:
@@ -814,6 +895,10 @@ def project_tab_content(
             budget.stop(element_start)
             break
         blocks.append(_project_block(element, unsupported, budget))
+    if budget.starved:
+        raise DocsInputError(
+            'max_chars is too small to return the next character'
+        )
     bounds_start = (
         blocks[0].start_index
         if blocks

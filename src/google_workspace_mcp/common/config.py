@@ -66,20 +66,37 @@ def _required_path(env: Mapping[str, str], key: str, default: Path) -> Path:
     return Path(value).expanduser()
 
 
-def resolve_credential_paths(service: str) -> tuple[Path, Path]:
-    """Resolve Google credential paths."""
+def _state_dir(service: str) -> Path:
+    """Return service state directory."""
+    return (_STATE_ROOT / service).expanduser()
+
+
+def resolve_token_path(
+    service: str,
+    env: Mapping[str, str] | None = None,
+) -> Path:
+    """Resolve Google token path."""
     # Reject unknown service
     _default_port(service)
-    prefix = service.upper()
-    env = os.environ
-    state_dir = (_STATE_ROOT / service).expanduser()
-    token_path = _required_path(
-        env, f'{prefix}_GOOGLE_TOKEN_PATH', state_dir / 'google_token.json'
+    return _required_path(
+        os.environ if env is None else env,
+        f'{service.upper()}_GOOGLE_TOKEN_PATH',
+        _state_dir(service) / 'google_token.json',
     )
-    download_path = _required_path(
-        env, f'{prefix}_MCP_DOWNLOAD_PATH', state_dir / 'downloads'
+
+
+def resolve_download_path(
+    service: str,
+    env: Mapping[str, str] | None = None,
+) -> Path:
+    """Resolve service download path."""
+    # Reject unknown service
+    _default_port(service)
+    return _required_path(
+        os.environ if env is None else env,
+        f'{service.upper()}_MCP_DOWNLOAD_PATH',
+        _state_dir(service) / 'downloads',
     )
-    return token_path, download_path
 
 
 def _integer(
@@ -209,20 +226,15 @@ class ServiceConfig:
         public_url = public_url_val.strip()
         mcp_path = _required_string(env, mcp_path_key, f'/{service}/mcp')
         _validate_mcp_path(mcp_path)
-        state_dir = (_STATE_ROOT / service).expanduser()
-        download_key = f'{prefix}_MCP_DOWNLOAD_PATH'
-        download_path = _required_path(
-            env, download_key, state_dir / 'downloads'
-        )
+        state_dir = _state_dir(service)
+        download_path = resolve_download_path(service, env)
         state_key = f'{prefix}_OAUTH_STATE_PATH'
         token_key = f'{prefix}_GOOGLE_TOKEN_PATH'
         audit_key = f'{prefix}_AUDIT_LOG_PATH'
         state_path = _required_path(
             env, state_key, state_dir / 'oauth_state.sqlite3'
         )
-        token_path = _required_path(
-            env, token_key, state_dir / 'google_token.json'
-        )
+        token_path = resolve_token_path(service, env)
         audit_path = _required_path(env, audit_key, state_dir / 'audit.jsonl')
         if os.path.abspath(state_path) == os.path.abspath(token_path):
             raise ValueError(f'{state_key} and {token_key} must differ')

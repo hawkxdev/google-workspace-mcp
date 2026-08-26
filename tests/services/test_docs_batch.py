@@ -676,3 +676,63 @@ def test_style_operations_still_combine_with_replace(
         'document-1', 'tab-1', operations, required_revision_id='revision-1'
     )
     assert result.operation_count == 2
+
+
+def replace_op(search: str = 'Hello') -> dict[str, Any]:
+    """Build replace text operation."""
+    return {
+        'operation': 'replace_text',
+        'search_text': search,
+        'replacement_text': 'X',
+        'match_case': True,
+        'expected_occurrences': 1,
+    }
+
+
+def test_two_replacements_in_one_batch_are_rejected(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    stage(fake_service)
+    with pytest.raises(DocsInputError, match='at most one replace_text'):
+        gateway.batch_update(
+            'document-1',
+            'tab-1',
+            [replace_op('Hello'), replace_op('World')],
+            required_revision_id='revision-1',
+        )
+    assert not [
+        call
+        for call in fake_service.documents_endpoint.calls
+        if call[0] == 'batchUpdate'
+    ]
+
+
+@pytest.mark.parametrize('bullets', ['create_bullets', 'delete_bullets'])
+def test_bullet_operations_cannot_join_replacement(
+    fake_service: FakeDocsService, gateway: DocsGateway, bullets: str
+) -> None:
+    stage(fake_service)
+    operation: dict[str, Any] = {
+        'operation': bullets,
+        'start_index': 1,
+        'end_index': 3,
+    }
+    if bullets == 'create_bullets':
+        operation['preset'] = 'disc_circle_square'
+    with pytest.raises(DocsInputError, match='shift indices'):
+        gateway.batch_update(
+            'document-1',
+            'tab-1',
+            [operation, replace_op()],
+            required_revision_id='revision-1',
+        )
+
+
+def test_batch_reply_normalization_reports_unknown_outcome(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    stage(fake_service, replies=('not-a-mapping',))
+    with pytest.raises(
+        DocsIndeterminateWriteError, match='may have been applied'
+    ):
+        run(gateway, [insert(index=1)])

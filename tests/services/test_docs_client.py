@@ -423,3 +423,107 @@ def test_programming_error_is_not_masked_as_credentials(
     gateway = DocsGateway(store, service_builder=explode)
     with pytest.raises(AttributeError):
         gateway.service()
+
+
+@pytest.mark.parametrize('status', [500, 502, 503])
+def test_server_error_after_write_reports_unknown_outcome(
+    fake_service: FakeDocsService, gateway: DocsGateway, status: int
+) -> None:
+    fake_service.queue('get', simple_document())
+    fake_service.queue(
+        'batchUpdate', FakeRequest(error=make_http_error(status))
+    )
+    with pytest.raises(
+        DocsIndeterminateWriteError, match='may have been applied'
+    ):
+        gateway.insert_text(
+            'document-1',
+            'tab-1',
+            1,
+            'Hello',
+            required_revision_id='revision-1',
+        )
+
+
+@pytest.mark.parametrize('status', [500, 503])
+def test_server_error_on_read_stays_retryable(
+    fake_service: FakeDocsService, gateway: DocsGateway, status: int
+) -> None:
+    queue_error(fake_service, make_http_error(status))
+    with pytest.raises(DocsProviderError) as caught:
+        gateway.get_document('document-1')
+    assert not isinstance(caught.value, DocsIndeterminateWriteError)
+    assert 'temporarily' in str(caught.value)
+
+
+def test_create_document_parse_failure_reports_unknown_outcome(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    fake_service.queue(
+        'create',
+        {
+            'documentId': 'document-1',
+            'title': 'Doc',
+            'revisionId': 'revision-1',
+            'tabs': [{'tabProperties': 'not-a-mapping'}],
+        },
+    )
+    with pytest.raises(
+        DocsIndeterminateWriteError, match='may have been applied'
+    ):
+        gateway.create_document('Doc')
+
+
+def test_replace_reply_failure_reports_unknown_outcome(
+    fake_service: FakeDocsService, gateway: DocsGateway
+) -> None:
+    fake_service.queue('get', simple_document())
+    fake_service.queue(
+        'batchUpdate',
+        batch_result(replies=({'replaceAllText': 'not-a-mapping'},)),
+    )
+    with pytest.raises(
+        DocsIndeterminateWriteError, match='may have been applied'
+    ):
+        gateway.replace_text(
+            'document-1',
+            'tab-1',
+            'Hello',
+            'X',
+            match_case=True,
+            expected_occurrences=1,
+            required_revision_id='revision-1',
+        )
+
+
+@pytest.mark.parametrize(
+    'error',
+    [
+        AssertionError('bad'),
+        NotImplementedError('bad'),
+        UnboundLocalError('bad'),
+    ],
+)
+def test_more_programming_errors_are_not_masked(
+    store: FakeDocsStore, error: Exception
+) -> None:
+    def explode(_: Any) -> Any:
+        """Raise a programming failure."""
+        raise error
+
+    gateway = DocsGateway(store, service_builder=explode)
+    with pytest.raises(type(error)):
+        gateway.service()
+
+
+def test_library_runtime_failure_stays_masked(
+    store: FakeDocsStore,
+) -> None:
+    def explode(_: Any) -> Any:
+        """Raise a library runtime failure."""
+        raise RuntimeError('/Users/owner/token.json could not be parsed')
+
+    gateway = DocsGateway(store, service_builder=explode)
+    with pytest.raises(DocsProviderError) as caught:
+        gateway.service()
+    assert 'token.json' not in str(caught.value)

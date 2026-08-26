@@ -457,7 +457,7 @@ def test_replace_text_counts_case_insensitively(
 def test_replace_text_counts_inside_table_cells(
     fake_service: FakeDocsService, gateway: DocsGateway
 ) -> None:
-    payload = document([tab('tab-1', [table(1, ('Left\n', 'Left\n'))])])
+    payload = document([tab('tab-1', [table(1, ('Left', 'Left'))])])
     stage(fake_service, payload, batch_result(replies=(replace_reply(2),)))
     result = gateway.replace_text(
         'document-1',

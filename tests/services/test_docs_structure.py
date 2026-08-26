@@ -25,6 +25,7 @@ from google_workspace_mcp.services.docs.structure import (
     count_paragraph_matches,
     parse_document_tabs,
     project_tab_content,
+    validate_delete_range,
 )
 from tests.services.docs_provider import (
     EMOJI,
@@ -38,6 +39,7 @@ from tests.services.docs_provider import (
     tab,
     table,
     table_of_contents,
+    text_run,
 )
 
 
@@ -168,7 +170,7 @@ def test_section_break_and_contents_table_are_typed() -> None:
 
 
 def test_table_is_typed_and_not_flattened() -> None:
-    body = [table(1, ('Left\n', 'Right\n'))]
+    body = [table(1, ('Left', 'Right'))]
     content = project_tab_content(document([tab('tab-1', body)]), 'tab-1')
     block = content.blocks[0]
     assert block.kind is DocsBlockKind.TABLE
@@ -316,11 +318,14 @@ def test_tab_segment_reserves_units_for_non_text_elements() -> None:
         'endIndex': 7,
         'inlineObjectElement': {'inlineObjectId': 'object-1'},
     }
-    body = document([tab('tab-1', [paragraph(1, 'Hello', tail=(marker,))])])
+    closing = text_run(7, '\n')
+    body = document(
+        [tab('tab-1', [paragraph(1, 'Hello', tail=(marker, closing))])]
+    )
     body_segment = build_tab_segment(body, 'tab-1')
     assert body_segment.start_index == 1
-    assert body_segment.end_index == 7
-    assert len(body_segment.text.encode('utf-16-le')) // 2 == 6
+    assert body_segment.end_index == 8
+    assert len(body_segment.text.encode('utf-16-le')) // 2 == 7
 
 
 def test_tab_segment_preserves_surrogate_pairs() -> None:
@@ -458,3 +463,53 @@ def test_narrow_tab_tree_still_reads_on_the_read_path() -> None:
     }
     content = project_tab_content(payload, f'tab-{MAX_DOCS_TABS - 1}')
     assert content.tab_id == f'tab-{MAX_DOCS_TABS - 1}'
+
+
+def nested_tables_document() -> dict[str, Any]:
+    """Build one nested table document."""
+
+    def cell(start: int, end: int, content: list[Any]) -> dict[str, Any]:
+        return {'startIndex': start, 'endIndex': end, 'content': content}
+
+    def tbl(start: int, end: int, cells: list[Any]) -> dict[str, Any]:
+        return {
+            'startIndex': start,
+            'endIndex': end,
+            'table': {
+                'rows': 1,
+                'columns': len(cells),
+                'tableRows': [
+                    {
+                        'startIndex': start + 1,
+                        'endIndex': end - 1,
+                        'tableCells': cells,
+                    }
+                ],
+            },
+        }
+
+    inner = tbl(3, 12, [cell(4, 11, [paragraph(5, 'inner\n')])])
+    outer = tbl(1, 20, [cell(2, 19, [inner, paragraph(13, 'after\n')])])
+    return document([tab('tab-1', [outer])])
+
+
+def test_whole_nested_table_can_be_deleted() -> None:
+    segment = build_tab_segment(nested_tables_document(), 'tab-1')
+    validate_delete_range(segment, 3, 12)
+
+
+def test_range_across_two_nested_cells_is_refused() -> None:
+    segment = build_tab_segment(nested_tables_document(), 'tab-1')
+    with pytest.raises(DocsInputError, match='protected structural'):
+        validate_delete_range(segment, 5, 14)
+
+
+def test_paragraph_without_closing_newline_is_refused() -> None:
+    marker = {
+        'startIndex': 6,
+        'endIndex': 7,
+        'inlineObjectElement': {'inlineObjectId': 'object-1'},
+    }
+    payload = document([tab('tab-1', [paragraph(1, 'Hello', tail=(marker,))])])
+    with pytest.raises(DocsProviderError):
+        build_tab_segment(payload, 'tab-1')
