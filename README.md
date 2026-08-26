@@ -2,7 +2,7 @@
 
 A project for building five independent remote MCP servers for Google Workspace: Gmail, Google Calendar, Google Drive, Google Sheets, and Google Docs.
 
-> **Status: pre-alpha.** The repository contains five locally runnable MCP service processes with isolated OAuth state, audit targets, path-scoped OAuth routes, secure health and readiness endpoints, immutable per-service configuration, a tested Google credential layer, 18 Gmail tools, 9 Calendar tools, 10 Drive tools, and 11 Sheets tools. Docs tool registry remains empty. Production Google credentials and deployment configuration are not included.
+> **Status: pre-alpha.** The repository contains five locally runnable MCP service processes with isolated OAuth state, audit targets, path-scoped OAuth routes, secure health and readiness endpoints, immutable per-service configuration, a tested Google credential layer, 18 Gmail tools, 9 Calendar tools, 10 Drive tools, 11 Sheets tools, and 7 Docs tools. Production Google credentials and deployment configuration are not included.
 
 ## Current status
 
@@ -30,8 +30,11 @@ Implemented:
 - 9 Calendar tools for calendar lists, bounded event search and reads, free/busy, event CRUD, recurring-event scopes, and mixed batch mutations.
 - 10 Drive tools for structured file and folder search, metadata retrieval, managed binary downloads, format-validated exports, folder creation, managed uploads, version-preflighted updates, moves, and app-owned copies.
 - 11 Sheets tools for spreadsheet metadata, single and batch A1 range reads with explicit render and date/time formatting modes, single and batch range updates with explicit raw/user-entered parsing, table row appending with insert/overwrite controls, destructive range clearing, and sheet structure management (create, add, rename, copy).
+- 7 Docs tools for document metadata with the full recursive tab tree, bounded typed content reads of one explicit tab, document creation, text insertion, scoped literal replacement with a verified occurrence count, range deletion, and a typed atomic batch of up to twenty operations.
 
-The Gmail, Calendar, Drive, and Sheets entry points register service-owned tools and connect them to separate Google credential boundaries. Docs continues to run with an empty tool registry. Production Google credentials and deployment configuration are not included.
+All five entry points register service-owned tools and connect them to separate Google credential boundaries. Production Google credentials and deployment configuration are not included.
+
+Docs addresses content by UTF-16 code units in half-open ranges, always requests every tab, and never reads the legacy top-level body. Every Docs mutation except document creation requires an explicit tab identifier and the revision returned by the most recent read, so a concurrent edit is refused before any change is applied. The mandatory final newline of a tab cannot be deleted, surrogate pairs cannot be split, and unsupported structures such as inline objects, equations and tables are reported explicitly instead of being flattened into text. Raw provider requests and raw field masks are refused by schema.
 
 ## Service status
 
@@ -41,7 +44,7 @@ The Gmail, Calendar, Drive, and Sheets entry points register service-owned tools
 | `calendar` | Implemented locally | calendar list, bounded event search and reads, free/busy, event CRUD, recurring-event scopes, and batch mutations |
 | `drive` | Implemented locally | structured search, metadata, folder contents, managed binary downloads, exports, folder creation, managed uploads, versioned updates, moves, and app-owned copies |
 | `sheets` | Implemented locally | spreadsheet metadata, single/batch range reads, single/batch range writes, table row appending, range clearing, and sheet structure management |
-| `docs` | Planned | document creation, structure and text retrieval, insert, and replace |
+| `docs` | Implemented locally | document metadata with recursive tabs, bounded typed tab content reads, document creation, text insertion, scoped replacement, range deletion, and typed atomic batch |
 
 Each service runs as a separate process with its own MCP endpoint, tool registry, Google OAuth scopes, Google credentials, and downstream OAuth state.
 
@@ -53,7 +56,7 @@ The design uses two independent layers:
 
 **Service to Google.** Each service uses separate Google credentials and the minimum required OAuth scopes. Google refresh tokens are never returned to MCP clients.
 
-The downstream state core, OAuth-only bearer middleware, OAuth endpoint routes, transport composition, five isolated service factories, Google credential layer, Gmail tools, Calendar tools, Drive tools, and Sheets tools exist today. The Docs service tool set remains planned.
+The downstream state core, OAuth-only bearer middleware, OAuth endpoint routes, transport composition, five isolated service factories, Google credential layer, and the Gmail, Calendar, Drive, Sheets and Docs tool sets exist today.
 
 ## Technology
 
@@ -128,10 +131,10 @@ The `--no-sync` flag is required when checking the installed dependency version.
 | `src/google_workspace_mcp/google_auth/` | secure Google credential persistence, refresh, and scope validation |
 | `src/google_workspace_mcp/audit/` | fail-closed per-service audit logging |
 | `src/google_workspace_mcp/transport/` | MCP policy, Streamable HTTP composition, and shared factory |
-| `src/google_workspace_mcp/services/` | five isolated service factories plus Gmail, Calendar, Drive, and Sheets domain tools |
+| `src/google_workspace_mcp/services/` | five isolated service factories plus Gmail, Calendar, Drive, Sheets, and Docs domain tools |
 | `src/google_workspace_mcp/cli/` | five runnable service entry points, shared runner, and OAuth administration |
 | `tests/core/` | OAuth core and package entry point regressions |
-| `tests/services/` | Gmail, Calendar, Drive, and Sheets provider, domain, authorization, tool, and factory regressions |
+| `tests/services/` | Gmail, Calendar, Drive, Sheets, and Docs provider, domain, authorization, tool, and factory regressions |
 | `pyproject.toml` | package metadata, dependencies, and tool configuration |
 | `NOTICE` | provenance of adapted code |
 

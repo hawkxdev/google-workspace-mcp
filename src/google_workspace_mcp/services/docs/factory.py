@@ -12,6 +12,8 @@ from google_workspace_mcp.transport.authorization import PolicyMCPServer
 from google_workspace_mcp.transport.extensions import Extension
 from google_workspace_mcp.transport.factory import create_service_app
 
+from .extension import DocsExtension
+
 
 def create_docs_app(
     config: ServiceConfig | None = None,
@@ -19,4 +21,8 @@ def create_docs_app(
 ) -> tuple[Starlette, PolicyMCPServer, OAuthState]:
     """Create Docs application."""
     resolved_config = config or ServiceConfig.from_env('docs')
-    return create_service_app(resolved_config, extensions=extensions)
+    docs_extension = DocsExtension(resolved_config)
+    return create_service_app(
+        resolved_config,
+        extensions=(docs_extension, *extensions),
+    )

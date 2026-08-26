@@ -1,0 +1,17 @@
+"""Define Docs service limits."""
+
+DOCS_SCOPES = (
+    'https://www.googleapis.com/auth/documents',
+    'https://www.googleapis.com/auth/drive.file',
+)
+MAX_DOCS_BATCH_OPERATIONS = 20
+MAX_DOCS_BLOCKS = 100
+MAX_DOCS_OUTPUT_CHARS = 20_000
+MAX_DOCS_ID_CHARS = 256
+MAX_DOCS_TITLE_CHARS = 256
+MAX_DOCS_TEXT_CHARS = 50_000
+MAX_DOCS_REPLACEMENTS = 1_000
+MAX_DOCS_TABS = 200
+MAX_DOCS_TAB_DEPTH = 10
+MAX_DOCS_BLOCK_DEPTH = 10
+REQUEST_RETRIES = 3
