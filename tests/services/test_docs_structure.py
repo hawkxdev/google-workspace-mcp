@@ -15,6 +15,7 @@ from google_workspace_mcp.services.docs.errors import (
     DocsInputError,
     DocsNotFoundError,
     DocsProviderError,
+    DocsUnsupportedError,
 )
 from google_workspace_mcp.services.docs.schemas import (
     DocsBlockKind,
@@ -116,7 +117,7 @@ def test_oversized_tab_count_is_rejected() -> None:
         tab(f'tab-{number}', simple_body(), index=number)
         for number in range(MAX_DOCS_TABS + 1)
     ]
-    with pytest.raises(DocsProviderError, match='Docs response is invalid'):
+    with pytest.raises(DocsUnsupportedError, match='more than 200 tabs'):
         parse_document_tabs(document(nodes))
 
 
@@ -129,8 +130,29 @@ def test_excessive_tab_depth_is_rejected() -> None:
             nesting_level=level - 1,
             children=[node],
         )
-    with pytest.raises(DocsProviderError, match='Docs response is invalid'):
+    with pytest.raises(
+        DocsUnsupportedError, match='nests tabs deeper than 10 levels'
+    ):
         parse_document_tabs(document([node]))
+
+
+def test_limit_refusal_is_not_reported_as_a_broken_provider_reply() -> None:
+    nodes = [
+        tab(f'tab-{number}', simple_body(), index=number)
+        for number in range(MAX_DOCS_TABS + 1)
+    ]
+    broken = document([tab('tab-1', simple_body())])
+    del broken['revisionId']
+
+    with pytest.raises(DocsUnsupportedError) as limit:
+        parse_document_tabs(document(nodes))
+    with pytest.raises(DocsProviderError) as malformed:
+        parse_document_tabs(broken)
+
+    assert not isinstance(limit.value, DocsProviderError)
+    assert not isinstance(malformed.value, DocsUnsupportedError)
+    assert str(MAX_DOCS_TABS) in str(limit.value)
+    assert str(MAX_DOCS_TABS) not in str(malformed.value)
 
 
 def test_paragraph_block_preserves_text_runs_and_style() -> None:
@@ -361,13 +383,17 @@ def test_tab_segment_for_unknown_tab_raises_not_found() -> None:
 
 def test_deep_tab_search_is_rejected_on_read_path() -> None:
     payload = deep_tab_document(MAX_DOCS_TAB_DEPTH + 5)
-    with pytest.raises(DocsProviderError, match='Docs response is invalid'):
+    with pytest.raises(
+        DocsUnsupportedError, match='nests tabs deeper than 10 levels'
+    ):
         project_tab_content(payload, 'deep')
 
 
 def test_deep_tab_search_is_rejected_when_building_segment() -> None:
     payload = deep_tab_document(MAX_DOCS_TAB_DEPTH + 5)
-    with pytest.raises(DocsProviderError, match='Docs response is invalid'):
+    with pytest.raises(
+        DocsUnsupportedError, match='nests tabs deeper than 10 levels'
+    ):
         build_tab_segment(payload, 'deep')
 
 
@@ -379,13 +405,19 @@ def test_tab_search_accepts_allowed_depth() -> None:
 
 def test_deeply_nested_tables_are_rejected() -> None:
     payload = nested_table_document(MAX_DOCS_BLOCK_DEPTH + 5)
-    with pytest.raises(DocsProviderError, match='Docs response is invalid'):
+    with pytest.raises(
+        DocsUnsupportedError,
+        match='nests structural blocks deeper than 10 levels',
+    ):
         project_tab_content(payload, 'tab-1')
 
 
 def test_deeply_nested_tables_are_rejected_when_counting() -> None:
     payload = nested_table_document(MAX_DOCS_BLOCK_DEPTH + 5)
-    with pytest.raises(DocsProviderError, match='Docs response is invalid'):
+    with pytest.raises(
+        DocsUnsupportedError,
+        match='nests structural blocks deeper than 10 levels',
+    ):
         count_paragraph_matches(payload, 'tab-1', 'Hi', True)
 
 
@@ -458,7 +490,7 @@ def test_wide_tab_tree_is_rejected_on_the_read_path() -> None:
         'revisionId': 'revision-1',
         'tabs': tabs,
     }
-    with pytest.raises(DocsProviderError):
+    with pytest.raises(DocsUnsupportedError, match='more than 200 tabs'):
         project_tab_content(payload, f'tab-{MAX_DOCS_TABS}')
 
 

@@ -15,7 +15,12 @@ from .constants import (
     MAX_DOCS_TABS,
     MAX_DOCS_TITLE_CHARS,
 )
-from .errors import DocsInputError, DocsNotFoundError, DocsProviderError
+from .errors import (
+    DocsInputError,
+    DocsNotFoundError,
+    DocsProviderError,
+    DocsUnsupportedError,
+)
 from .schemas import (
     DocsBlock,
     DocsBulletMarker,
@@ -39,6 +44,20 @@ from .schemas import (
 _PLACEHOLDER = '\ufffc'
 _INVALID_RESPONSE = 'Docs response is invalid'
 _TAB_NOT_FOUND = 'Docs tab was not found'
+
+# A limit refusal names the limit: the provider reply itself is well formed
+_TOO_MANY_TABS = (
+    f'Docs document has more than {MAX_DOCS_TABS} tabs, which is beyond '
+    f'the supported profile'
+)
+_TAB_DEPTH_EXCEEDED = (
+    f'Docs document nests tabs deeper than {MAX_DOCS_TAB_DEPTH} levels, '
+    f'which is beyond the supported profile'
+)
+_BLOCK_DEPTH_EXCEEDED = (
+    f'Docs document nests structural blocks deeper than '
+    f'{MAX_DOCS_BLOCK_DEPTH} levels, which is beyond the supported profile'
+)
 
 _AUXILIARY_SEGMENT_KEYS = ('headers', 'footers', 'footnotes')
 
@@ -311,10 +330,10 @@ def _parse_tab(
 ) -> DocsTabSummary:
     """Parse single provider tab."""
     if depth > MAX_DOCS_TAB_DEPTH:
-        raise DocsProviderError(_INVALID_RESPONSE)
+        raise DocsUnsupportedError(_TAB_DEPTH_EXCEEDED)
     counter[0] += 1
     if counter[0] > MAX_DOCS_TABS:
-        raise DocsProviderError(_INVALID_RESPONSE)
+        raise DocsUnsupportedError(_TOO_MANY_TABS)
     properties = _require_mapping(node.get('tabProperties'))
     raw_children = node.get('childTabs') or ()
     children = tuple(
@@ -371,12 +390,12 @@ def _find_tab_node(
 ) -> Mapping[str, Any] | None:
     """Find provider tab node."""
     if depth > MAX_DOCS_TAB_DEPTH:
-        raise DocsProviderError(_INVALID_RESPONSE)
+        raise DocsUnsupportedError(_TAB_DEPTH_EXCEEDED)
     for raw in nodes:
         node = _require_mapping(raw)
         counter[0] += 1
         if counter[0] > MAX_DOCS_TABS:
-            raise DocsProviderError(_INVALID_RESPONSE)
+            raise DocsUnsupportedError(_TOO_MANY_TABS)
         properties = _require_mapping(node.get('tabProperties'))
         if properties.get('tabId') == tab_id:
             return node
@@ -512,7 +531,7 @@ def _collect_spans(
 ) -> None:
     """Collect addressable segment spans."""
     if depth > MAX_DOCS_BLOCK_DEPTH:
-        raise DocsProviderError(_INVALID_RESPONSE)
+        raise DocsUnsupportedError(_BLOCK_DEPTH_EXCEEDED)
     for raw in content:
         element = _require_mapping(raw)
         start, end = _element_bounds(element)
@@ -827,7 +846,7 @@ def _project_block(
 ) -> DocsBlock:
     """Project single structural block."""
     if depth > MAX_DOCS_BLOCK_DEPTH:
-        raise DocsProviderError(_INVALID_RESPONSE)
+        raise DocsUnsupportedError(_BLOCK_DEPTH_EXCEEDED)
     start, end = _element_bounds(element)
     if 'paragraph' in element:
         return _project_paragraph(element, unsupported, budget)
@@ -934,7 +953,7 @@ def _searchable_segments(
 ) -> list[str]:
     """Collect contiguous searchable text."""
     if depth > MAX_DOCS_BLOCK_DEPTH:
-        raise DocsProviderError(_INVALID_RESPONSE)
+        raise DocsUnsupportedError(_BLOCK_DEPTH_EXCEEDED)
     segments: list[str] = []
     for raw in content:
         element = _require_mapping(raw)

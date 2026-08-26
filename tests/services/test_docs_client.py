@@ -22,6 +22,7 @@ from google_workspace_mcp.services.docs.errors import (
     DocsProviderError,
     DocsRateLimitError,
     DocsScopeError,
+    DocsUnsupportedError,
 )
 from tests.services.docs_provider import (
     FakeDocsService,
@@ -185,7 +186,7 @@ def test_oversized_structure_is_rejected(
         for number in range(300)
     ]
     fake_service.queue('get', document(nodes))
-    with pytest.raises(DocsProviderError, match='Docs response is invalid'):
+    with pytest.raises(DocsUnsupportedError, match='more than 200 tabs'):
         gateway.get_document('document-1')
 
 
