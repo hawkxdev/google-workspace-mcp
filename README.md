@@ -2,7 +2,7 @@
 
 Five isolated remote MCP services for Gmail, Google Calendar, Google Drive, Google Sheets, and Google Docs. Each service runs as a separate process with its own endpoint, OAuth state, Google credential, scope set, and tool registry.
 
-> **Status: pre-alpha.** All five service processes and 55 service-owned tools are locally runnable. Production revision `c712332` is deployed as five isolated loopback services behind the public HTTPS vhost; production Google credentials remain server-only and are never included in the repository.
+> **Status: pre-alpha.** All five service processes and 55 service-owned tools are locally runnable. Production revision `7bac940` is deployed as five isolated loopback services behind the public HTTPS vhost; production Google credentials remain server-only and are never included in the repository.
 
 ## Public pages
 
@@ -199,7 +199,7 @@ docs/
 
 ## Current boundaries
 
-- Production revision `c712332` is deployed through one systemd template and five isolated instances.
+- Production revision `7bac940` is deployed through one systemd template and five isolated instances.
 - Production Google credentials are stored only in per-service owner-only files on the managed host.
 - The homepage, privacy policy, MCP routes, OAuth routes, metadata, health, and readiness share one HTTPS vhost without sharing process state.
 - Google OAuth publishing and verification are separate states.

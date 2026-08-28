@@ -27,7 +27,8 @@ Metadata advertises:
 - PKCE S256;
 - `client_secret_post` client authentication;
 - the canonical service resource;
-- the service authorization and token endpoints.
+- the service authorization and token endpoints;
+- RFC 9207 authorization-response issuer identification.
 
 ## Dynamic Client Registration
 
@@ -54,7 +55,7 @@ The MCP client must send:
 - the canonical service `resource`;
 - an opaque `state` value.
 
-The owner authenticates with the service operator credentials. A successful authorization produces a one-time authorization code and redirects the browser to the registered URI.
+The owner authenticates with the service operator credentials. A successful authorization produces a one-time authorization code and redirects the browser to the registered URI. The redirect includes an `iss` parameter equal to the canonical metadata issuer so compatible clients can reject authorization-server mix-up.
 
 The token request must include:
 

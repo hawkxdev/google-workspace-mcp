@@ -85,12 +85,15 @@ The protected-resource metadata route is:
 Authorization-server metadata advertises:
 
 - canonical issuer and resource;
+- RFC 9207 authorization-response issuer support;
 - authorization endpoint;
 - token endpoint;
 - registration endpoint;
 - authorization-code and refresh-token grants;
 - PKCE S256;
 - `client_secret_post`.
+
+Successful authorization redirects include an `iss` parameter that exactly matches the canonical metadata issuer.
 
 Protected-resource metadata advertises:
 
