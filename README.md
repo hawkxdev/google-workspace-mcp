@@ -2,14 +2,14 @@
 
 Five isolated remote MCP services for Gmail, Google Calendar, Google Drive, Google Sheets, and Google Docs. Each service runs as a separate process with its own endpoint, OAuth state, Google credential, scope set, and tool registry.
 
-> **Status: pre-alpha.** All five service processes and 55 service-owned tools are locally runnable. Production systemd, nginx, and environment examples are included but not deployed; production Google credentials are never included in the repository.
+> **Status: pre-alpha.** All five service processes and 55 service-owned tools are locally runnable. Production revision `c712332` is deployed as five isolated loopback services behind the public HTTPS vhost; production Google credentials remain server-only and are never included in the repository.
 
 ## Public pages
 
 - [Homepage](https://mcp.hawkxdev.dev/)
 - [Google user data privacy policy](https://mcp.hawkxdev.dev/privacy)
 
-The deployed public surface remains static-only until the runtime assets in `deploy/` are installed by the operator.
+The public HTTPS surface serves the homepage and privacy policy together with five path-scoped MCP and OAuth runtime surfaces.
 
 ## Included
 
@@ -199,9 +199,9 @@ docs/
 
 ## Current boundaries
 
-- Production runtime assets are included but require an explicit operator deployment.
-- Production Google credentials are not included.
-- The currently deployed homepage and privacy policy remain static-only until runtime deployment.
+- Production revision `c712332` is deployed through one systemd template and five isolated instances.
+- Production Google credentials are stored only in per-service owner-only files on the managed host.
+- The homepage, privacy policy, MCP routes, OAuth routes, metadata, health, and readiness share one HTTPS vhost without sharing process state.
 - Google OAuth publishing and verification are separate states.
 - Restricted Google scopes may require verification and a security assessment.
 - Refresh tokens can be revoked or invalidated by Google.

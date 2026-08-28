@@ -349,9 +349,9 @@ Each service then requires its own service-prefixed runtime configuration before
 ## Current Boundaries
 
 - The project is pre-alpha.
-- Production Google credentials are not included.
-- Production runtime assets are included but require an explicit operator deployment.
-- The currently deployed homepage and privacy policy remain static-only until runtime deployment.
+- Production revision `c712332` is deployed through five isolated loopback processes.
+- Production Google credentials remain server-only in per-service owner-only files.
+- The public HTTPS vhost serves static pages and five path-scoped MCP and OAuth runtime surfaces.
 - Google OAuth publishing and Google verification are separate states.
 - Restricted Google scopes may require verification and a security assessment.
 - Refresh tokens can be revoked or invalidated by Google.
