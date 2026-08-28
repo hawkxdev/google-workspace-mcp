@@ -2,14 +2,14 @@
 
 Five isolated remote MCP services for Gmail, Google Calendar, Google Drive, Google Sheets, and Google Docs. Each service runs as a separate process with its own endpoint, OAuth state, Google credential, scope set, and tool registry.
 
-> **Status: pre-alpha.** All five service processes and 55 service-owned tools are locally runnable. Production Google credentials and runtime process-manager configuration are not included; the public homepage and privacy policy are available.
+> **Status: pre-alpha.** All five service processes and 55 service-owned tools are locally runnable. Production systemd, nginx, and environment examples are included but not deployed; production Google credentials are never included in the repository.
 
 ## Public pages
 
 - [Homepage](https://mcp.hawkxdev.dev/)
 - [Google user data privacy policy](https://mcp.hawkxdev.dev/privacy)
 
-The public static surface does not proxy MCP traffic.
+The deployed public surface remains static-only until the runtime assets in `deploy/` are installed by the operator.
 
 ## Included
 
@@ -26,6 +26,7 @@ The public static surface does not proxy MCP traffic.
 - Managed Gmail attachment and Drive download storage
 - OAuth state administration CLI
 - Google installed-application authorization CLI
+- A hardened systemd template, five isolated environment examples, and one path-aware nginx vhost
 
 ## Service capabilities
 
@@ -46,6 +47,7 @@ Detailed tool names, limits, concurrency, continuation, and error behavior are d
 - [Authentication and credential operations](docs/auth.md)
 - [Google Workspace integrations](docs/integrations.md)
 - [MCP protocol contract](docs/protocol.md)
+- [Production deployment](deploy/README.md)
 
 ## Architecture
 
@@ -180,6 +182,9 @@ src/google_workspace_mcp/
 └── transport/
 
 deploy/
+├── README.md
+├── google-mcp@.service
+├── env/
 ├── public/
 ├── nginx-google-workspace-mcp-bootstrap.conf
 └── nginx-google-workspace-mcp.conf
@@ -194,9 +199,9 @@ docs/
 
 ## Current boundaries
 
-- Runtime process-manager configuration is not included.
+- Production runtime assets are included but require an explicit operator deployment.
 - Production Google credentials are not included.
-- The static homepage and privacy policy do not expose MCP routes.
+- The currently deployed homepage and privacy policy remain static-only until runtime deployment.
 - Google OAuth publishing and verification are separate states.
 - Restricted Google scopes may require verification and a security assessment.
 - Refresh tokens can be revoked or invalidated by Google.

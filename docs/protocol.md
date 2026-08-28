@@ -42,6 +42,8 @@ The MCP path can be configured per service. It cannot collide with OAuth, health
 | `POST` | `/oauth/token` | OAuth flow | Code and refresh grants |
 | `POST` | `/oauth/register` | Public registration | Dynamic client registration |
 
+The production reverse proxy exposes process liveness and readiness as `/<service>/health` and `/<service>/ready`, rewriting them to the process-local `/health` and `/ready` routes. Readiness remains bearer protected.
+
 When the MCP path is not `/`, a root `GET` or `HEAD` probe returns `200` and identifies the supported MCP protocol version.
 
 ## Health and Readiness

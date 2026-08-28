@@ -319,6 +319,9 @@ Public operational assets:
 
 ```text
 deploy/
+├── README.md
+├── google-mcp@.service
+├── env/
 ├── public/
 │   ├── index.html
 │   ├── privacy/
@@ -347,8 +350,8 @@ Each service then requires its own service-prefixed runtime configuration before
 
 - The project is pre-alpha.
 - Production Google credentials are not included.
-- Runtime process-manager configuration is not included.
-- The static homepage and privacy policy do not proxy MCP traffic.
+- Production runtime assets are included but require an explicit operator deployment.
+- The currently deployed homepage and privacy policy remain static-only until runtime deployment.
 - Google OAuth publishing and Google verification are separate states.
 - Restricted Google scopes may require verification and a security assessment.
 - Refresh tokens can be revoked or invalidated by Google.
@@ -362,4 +365,5 @@ Each service then requires its own service-prefixed runtime configuration before
 
 - [README](../README.md)
 - [Google Cloud and OAuth Setup](google-cloud-setup.md)
+- [Production Deployment](../deploy/README.md)
 - Google user data privacy policy: `deploy/public/privacy/index.html`

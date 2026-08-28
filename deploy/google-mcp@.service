@@ -1,0 +1,30 @@
+[Unit]
+Description=Google Workspace MCP %i service
+Documentation=https://github.com/hawkxdev/google-workspace-mcp
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=googlemcp
+Group=googlemcp
+WorkingDirectory=/opt/google-workspace-mcp/app
+Environment=HOME=/var/lib/google-workspace-mcp
+EnvironmentFile=/etc/google-mcp/%i.env
+ExecStart=/opt/google-workspace-mcp/app/.venv/bin/google-mcp-%i
+
+Restart=on-failure
+RestartSec=5
+
+# Default SIGTERM handling is sufficient for the ASGI lifecycle.
+# Runtime writes only to paths configured for each service.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
