@@ -1,190 +1,215 @@
 # google-workspace-mcp
 
-A project for building five independent remote MCP servers for Google Workspace: Gmail, Google Calendar, Google Drive, Google Sheets, and Google Docs.
+Five isolated remote MCP services for Gmail, Google Calendar, Google Drive, Google Sheets, and Google Docs. Each service runs as a separate process with its own endpoint, OAuth state, Google credential, scope set, and tool registry.
 
-> **Status: pre-alpha.** The repository contains five locally runnable MCP service processes with isolated OAuth state, audit targets, path-scoped OAuth routes, secure health and readiness endpoints, immutable per-service configuration, a tested Google credential layer, 18 Gmail tools, 9 Calendar tools, 10 Drive tools, 11 Sheets tools, and 7 Docs tools. Production Google credentials and runtime service deployment are not included; static pre-publication web assets are included.
+> **Status: pre-alpha.** All five service processes and 55 service-owned tools are locally runnable. Production Google credentials and runtime process-manager configuration are not included; the public homepage and privacy policy are available.
 
-## Current status
+## Public pages
 
-Implemented:
+- [Homepage](https://mcp.hawkxdev.dev/)
+- [Google user data privacy policy](https://mcp.hawkxdev.dev/privacy)
 
-- a Python package with five service entry points, one Google authorization entry point, and one OAuth administration entry point;
-- SQLite-backed downstream OAuth state;
-- OAuth client registration and PKCE;
-- token binding to a canonical `resource`;
-- refresh token rotation, replay detection, and family revocation;
-- immutable state ownership metadata for the service and resource;
-- immutable per-service configuration with strict port and token TTL validation;
-- secure per-service Google credential storage with atomic writes, cross-process refresh locking, scope validation, bounded retries, and secret-safe errors;
-- OAuth-only bearer authentication with RFC 9728 challenges;
-- path-scoped OAuth metadata, authorization, token, and registration routes;
-- request-scoped, secret-free authenticated principal metadata;
-- fail-closed binding between service configuration and OAuth state ownership;
-- a metadata-only OAuth administration CLI with service ownership checks;
-- MCP 2.x Streamable HTTP application composition;
-- five isolated service factories and runnable CLI entry points;
-- public minimal health and protected readiness endpoints;
-- fail-closed per-service audit logging and startup validation;
-- exact trusted-proxy allowlists without wildcard forwarding trust.
-- 18 Gmail tools for bounded search and reading, label workflows, managed attachment downloads, full draft lifecycle, plain-text sending, and reply to the original author.
-- 9 Calendar tools for calendar lists, bounded event search and reads, free/busy, event CRUD, recurring-event scopes, and mixed batch mutations.
-- 10 Drive tools for structured file and folder search, metadata retrieval, managed binary downloads, format-validated exports, folder creation, managed uploads, version-preflighted updates, moves, and app-owned copies.
-- 11 Sheets tools for spreadsheet metadata, single and batch A1 range reads with explicit render and date/time formatting modes, single and batch range updates with explicit raw/user-entered parsing, table row appending with insert/overwrite controls, destructive range clearing, and sheet structure management (create, add, rename, copy).
-- 7 Docs tools for document metadata with the full recursive tab tree, bounded typed content reads of one explicit tab, document creation, text insertion, scoped literal replacement with a verified occurrence count, range deletion, and a typed atomic batch of up to twenty operations.
+The public static surface does not proxy MCP traffic.
 
-All five entry points register service-owned tools and connect them to separate Google credential boundaries. Production Google credentials and runtime service deployment are not included.
+## Included
 
-Docs addresses content by UTF-16 code units in half-open ranges, always requests every tab, and never reads the legacy top-level body. Every Docs mutation except document creation requires an explicit tab identifier and the revision returned by the most recent read, so a concurrent edit is refused before any change is applied. The mandatory final newline of a tab cannot be deleted, surrogate pairs cannot be split, and unsupported structures such as inline objects, equations and tables are reported explicitly instead of being flattened into text. Raw provider requests and raw field masks are refused by schema.
+- Five independent Streamable HTTP MCP service entry points
+- OAuth 2.1 client authorization with PKCE S256
+- Resource-bound bearer tokens and rotating refresh tokens
+- Replay detection and refresh-family revocation
+- Five isolated Google credential stores
+- Exact per-service Google OAuth scope validation
+- Public health and protected readiness endpoints
+- Fail-closed service and resource ownership checks
+- Exact trusted-proxy allowlists
+- Secret-safe provider error boundaries
+- Managed Gmail attachment and Drive download storage
+- OAuth state administration CLI
+- Google installed-application authorization CLI
 
-A mutation is addressed against a map of the tab that distinguishes editable paragraph text from protected structural boundaries. An index inside a table frame rather than inside paragraph text is refused, and a range that would split a table boundary instead of covering it is refused as well, each before the provider is called. Text that Google silently removes, meaning the control ranges `U+0000` to `U+0008` and `U+000C` to `U+001F` and the private use area, is rejected rather than reported as written; tabs and newlines remain allowed.
+## Service capabilities
 
-A content read is bounded by a block cap, a character budget and a node budget that also cover the inside of a single large block, so one oversized paragraph or one wide table is clipped rather than returned whole. A clipped response reports `truncated` and the `next_start_index` to continue from; passing that index back resumes inside the same block rather than repeating it, and clipping never splits a surrogate pair. A character budget too small to return even one character is refused rather than returning nothing.
+| Service | Tools | Capabilities |
+|---|---:|---|
+| Gmail | 18 | bounded message and thread search and reads, labels, managed attachment downloads, drafts, plain-text send, and reply |
+| Calendar | 9 | calendar list, bounded event search and reads, free/busy, event CRUD, recurring-event scopes, and batch mutations |
+| Drive | 10 | structured search, metadata, folder contents, managed downloads, exports, folder creation, uploads, versioned updates, moves, and app-owned copies |
+| Sheets | 11 | spreadsheet metadata, single and batch range reads and writes, row appending, range clearing, and sheet structure management |
+| Docs | 7 | recursive tab metadata, bounded typed reads, document creation, text insertion, replacement, range deletion, and typed atomic batches |
 
-Batch operations run in caller order and the provider applies earlier index shifts, but every index is validated against the supplied revision alone. Indices therefore describe the state of that revision, and work that depends on an earlier shift belongs in a following call. A batch carries at most one replacement, and a replacement cannot be combined with any operation that shifts indices, including bullet changes, because the expected occurrence count is verified against the supplied revision. That count covers the whole tab, including headers, footers and footnotes, matching the scope the provider actually replaces in.
+Detailed tool names, limits, concurrency, continuation, and error behavior are documented in [Google Workspace integrations](docs/integrations.md).
 
-A write is never retried automatically. A transport failure, a server error, or any unreadable part of the response after a write is reported as an outcome that may already have been applied, distinct from a plain temporary failure. The caller is told to reread the document and compare its revision instead of repeating the call. A server error carries that outcome even when its body names a reason that would otherwise read as a plain conflict or a rate limit, because the body of a failed write cannot establish that the write did not land.
+## Documentation
 
-A document may also be refused for exceeding a supported structural limit: more than two hundred tabs, tabs nested deeper than ten levels, or structural blocks nested deeper than ten levels. That refusal is reported separately from a malformed provider reply and names the limit and its value, because the two require different responses from the caller: a malformed reply is worth retrying, while an oversized document is outside the profile this server supports and needs a human decision. The editor itself admits at most one hundred tabs nested three levels deep, so these limits are a guard against an anomalous reply rather than a restriction on documents a person can author.
+- [Architecture overview](docs/overview.md)
+- [Google Cloud and OAuth setup](docs/google-cloud-setup.md)
+- [Authentication and credential operations](docs/auth.md)
+- [Google Workspace integrations](docs/integrations.md)
+- [MCP protocol contract](docs/protocol.md)
 
-## Public OAuth surface
+## Architecture
 
-The repository includes a self-contained landing page and Google user data privacy policy under `deploy/public/`. Two nginx 1.24 configurations serve only `/`, `/privacy`, local assets and ACME validation before any MCP process is deployed. The bootstrap configuration establishes the HTTP validation surface; the HTTPS configuration is the publication target after DNS and TLS exist.
+The project separates two authorization layers:
 
-The intended public URLs are `https://mcp.hawkxdev.dev/` and `https://mcp.hawkxdev.dev/privacy`. They are not live until the owner completes the separate DNS, TLS and deployment gate.
+1. An MCP client authenticates to one service through OAuth 2.1.
+2. That service authenticates to one Google product API through its own Google credential.
 
-## Service status
+Google credentials never cross the MCP boundary. An MCP bearer token is accepted only by the canonical service resource that issued it.
 
-| Service | Status | Capabilities |
-|---|---|---|
-| `gmail` | Implemented locally | bounded message and thread search and reads, labels, managed attachment downloads, drafts, plain-text send, and reply |
-| `calendar` | Implemented locally | calendar list, bounded event search and reads, free/busy, event CRUD, recurring-event scopes, and batch mutations |
-| `drive` | Implemented locally | structured search, metadata, folder contents, managed binary downloads, exports, folder creation, managed uploads, versioned updates, moves, and app-owned copies |
-| `sheets` | Implemented locally | spreadsheet metadata, single/batch range reads, single/batch range writes, table row appending, range clearing, and sheet structure management |
-| `docs` | Implemented locally | document metadata with recursive tabs, bounded typed tab content reads, document creation, text insertion, scoped replacement, range deletion, and typed atomic batch |
+Each process owns its MCP endpoint, Google scopes, Google credential, downstream OAuth state, audit target, managed-file directory, and tool registry.
 
-Each service runs as a separate process with its own MCP endpoint, tool registry, Google OAuth scopes, Google credentials, and downstream OAuth state.
-
-## Target authorization architecture
-
-The design uses two independent layers:
-
-**Client to service.** The MCP client uses OAuth 2.1 with PKCE. Each access token is bound to one `resource`, and refresh tokens rotate with replay detection.
-
-**Service to Google.** Each service uses separate Google credentials and the minimum required OAuth scopes. Google refresh tokens are never returned to MCP clients.
-
-The downstream state core, OAuth-only bearer middleware, OAuth endpoint routes, transport composition, five isolated service factories, Google credential layer, and the Gmail, Calendar, Drive, Sheets and Docs tool sets exist today.
+See [Architecture overview](docs/overview.md) for the complete data flow and source layout.
 
 ## Technology
 
 - [Python 3.14](https://docs.python.org/3.14/)
 - [uv](https://docs.astral.sh/uv/)
-- [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
+- [MCP Python SDK](https://modelcontextprotocol.io/docs/sdk)
 - [Starlette](https://www.starlette.io/)
 - [Pydantic](https://docs.pydantic.dev/)
-- [Google API Python Client](https://github.com/googleapis/google-api-python-client)
+- [Google API Python Client](https://googleapis.github.io/google-api-python-client/)
 
-## Development prerequisites
+## Prerequisites
 
-- Git
 - Python 3.14
 - uv
+- A Google Cloud project
+- A Desktop OAuth client
+- A public HTTPS service URL
 
-A Google Cloud project and OAuth client will be required when production credentials are provisioned. The current credential-layer tests use local fake token endpoints and synthetic credentials only.
+See [Google Cloud and OAuth setup](docs/google-cloud-setup.md) before creating service credentials.
 
 ## Development setup
 
+Run these commands from the source directory:
+
 ```bash
-git clone https://github.com/hawkxdev/google-workspace-mcp.git
 cd google-workspace-mcp
 uv sync --dev
 ```
 
-The virtual environment does not need to be activated. Run commands through `uv run`.
+The virtual environment does not need to be activated. Run project commands through `uv run`.
 
-## Configuration
+## Runtime configuration
 
-Every service reads its settings from environment variables prefixed with the service name, for example `GMAIL_` or `DRIVE_`.
+Every service reads variables with its uppercase prefix:
 
-`<SERVICE>_MCP_PUBLIC_URL` is required and must be the absolute HTTPS URL the service is reachable at. There is no default: OAuth metadata, token audience binding, and the advertised endpoints are all derived from it.
+```text
+GMAIL_
+CALENDAR_
+DRIVE_
+SHEETS_
+DOCS_
+```
 
-`<SERVICE>_MCP_ALLOWED_HOSTS` lists the public host names the transport accepts. Leave it unset for local development, where the transport stays reachable on loopback only. Behind a reverse proxy it must contain the public host, otherwise the proxied request is rejected before it reaches the application.
+`<SERVICE>` below means one of those five prefixes.
 
-`<SERVICE>_MCP_FORWARDED_ALLOW_IPS` is an exact list of trusted proxy addresses. Wildcards and unbounded networks such as `0.0.0.0/0` are rejected.
+| Variable | Required | Default |
+|---|---|---|
+| `<SERVICE>_MCP_PUBLIC_URL` | yes | none |
+| `<SERVICE>_OAUTH_LOGIN_USERNAME` | yes | none |
+| `<SERVICE>_OAUTH_LOGIN_PASSWORD` | yes | none |
+| `<SERVICE>_MCP_HOST` | no | `127.0.0.1` |
+| `<SERVICE>_MCP_PORT` | no | service default |
+| `<SERVICE>_MCP_PATH` | no | `/<service>/mcp` |
+| `<SERVICE>_MCP_ALLOWED_HOSTS` | no | empty for local loopback |
+| `<SERVICE>_MCP_FORWARDED_ALLOW_IPS` | no | `127.0.0.1` |
+| `<SERVICE>_OAUTH_STATE_PATH` | no | `~/.local/share/google-workspace-mcp/<service>/oauth_state.sqlite3` |
+| `<SERVICE>_GOOGLE_TOKEN_PATH` | no | `~/.local/share/google-workspace-mcp/<service>/google_token.json` |
+| `<SERVICE>_AUDIT_LOG_PATH` | no | `~/.local/share/google-workspace-mcp/<service>/audit.jsonl` |
+| `<SERVICE>_MCP_DOWNLOAD_PATH` | no | `~/.local/share/google-workspace-mcp/<service>/downloads` |
+| `<SERVICE>_OAUTH_ACCESS_TOKEN_TTL_SECONDS` | no | `86400` |
+| `<SERVICE>_OAUTH_REFRESH_TOKEN_TTL_SECONDS` | no | `2592000` |
 
-`<SERVICE>_OAUTH_STATE_PATH`, `<SERVICE>_GOOGLE_TOKEN_PATH`, `<SERVICE>_AUDIT_LOG_PATH`, and `<SERVICE>_MCP_DOWNLOAD_PATH` must all differ from one another.
+The public URL must be an absolute HTTPS URL. OAuth metadata, bearer-token resource binding, and advertised endpoints are derived from it.
+
+OAuth state, Google credentials, audit logs, and managed downloads must use distinct paths.
+
+`MCP_FORWARDED_ALLOW_IPS` accepts only explicit trusted proxy addresses or bounded networks. Wildcards and unbounded networks are rejected.
+
+### Default service endpoints
+
+| Service | Command | Port | MCP path |
+|---|---|---:|---|
+| Gmail | `google-mcp-gmail` | `8431` | `/gmail/mcp` |
+| Calendar | `google-mcp-calendar` | `8432` | `/calendar/mcp` |
+| Drive | `google-mcp-drive` | `8433` | `/drive/mcp` |
+| Sheets | `google-mcp-sheets` | `8434` | `/sheets/mcp` |
+| Docs | `google-mcp-docs` | `8435` | `/docs/mcp` |
+
+Each entry point requires its complete service-prefixed configuration before startup.
+
+## Google authorization
+
+Each service requires a separate Google OAuth grant.
+
+```bash
+uv run --no-sync google-mcp-authorize --service gmail --client-secrets "$HOME/.local/share/google-workspace-mcp/client_secret.json"
+```
+
+The command requests offline access and rejects grants without a refresh token or the complete service scope set.
+
+See [Google Cloud and OAuth setup](docs/google-cloud-setup.md) for API enablement, scopes, consent, publishing, verification, credential permissions, and troubleshooting.
+
+## MCP client authorization
+
+Each service exposes OAuth 2.1 discovery, dynamic client registration, authorization-code exchange, rotating refresh tokens, and resource-bound bearer access.
+
+See [Authentication and credential operations](docs/auth.md) for client authorization, token lifecycle, revocation, and backup commands.
 
 ## OAuth administration
 
-The metadata-only operator CLI lists and revokes clients or access tokens and creates online SQLite backups. Every command requires an explicit service and validates the persisted state owner before operating. Client secrets, authorization codes, and token values are never returned.
+List one service's registered clients:
 
 ```bash
 uv run --no-sync google-mcp-oauth --service gmail clients list
 ```
 
-Each service uses its own `<SERVICE>_OAUTH_STATE_PATH` and `<SERVICE>_MCP_DOWNLOAD_PATH`. The download path is a security boundary: OAuth state and backups are rejected inside it.
+The CLI can list and revoke clients or access tokens and create online OAuth state backups. It returns metadata only, never token values or client secrets.
 
-## Google authorization
+## Source layout
 
-Each service reaches Google with its own credentials, so each one is authorized separately and keeps its own credential file. The authorization entry point runs the installed application consent flow on loopback, requests offline access explicitly, and stores the result through the same owner-only credential path the services read.
+```text
+src/google_workspace_mcp/
+├── auth/
+├── audit/
+├── cli/
+├── common/
+├── google_auth/
+├── services/
+└── transport/
 
-```bash
-uv run --no-sync google-mcp-authorize --service gmail --client-secrets ./client_secret.json
+deploy/
+├── public/
+├── nginx-google-workspace-mcp-bootstrap.conf
+└── nginx-google-workspace-mcp.conf
+
+docs/
+├── overview.md
+├── google-cloud-setup.md
+├── auth.md
+├── integrations.md
+└── protocol.md
 ```
 
-The client secrets file must be a regular file owned by the current user with no group or other permissions. It is opened through its parent directory chain without following symbolic links and is read from the descriptor that was checked, so the file cannot be swapped between the check and the read. The credential path is proven writable before the browser step, so a predictable path failure cannot strand a grant that was already issued. A grant that returns no refresh token, or that grants fewer scopes than the service requires, is rejected and nothing is written. The command needs no service environment variables: the credential paths fall back to the same per-service defaults the services use, and `--token-path` and `--download-path` override them. Standard output carries exactly one JSON line containing the service, the credential path, the granted scopes, whether a refresh token is present, and the access token expiry; the consent prompt and any library output go to standard error. That credential path is the only local path the command prints, and it appears solely in the success line. Token values, client secrets, authorization codes, provider payloads and local paths never appear in an error message: a failure reports a fixed reason, and a filesystem failure adds only the operating system error name for its error number.
+## Current boundaries
 
-Requesting offline access is what makes the grant durable. Without it the grant returns no refresh token and every service would need an interactive browser round trip again.
-
-## Checks
-
-```bash
-uv run --no-sync pytest -q
-uv run --no-sync ruff check .
-uv run --no-sync ruff format --check .
-uv run --no-sync mypy src
-```
-
-The `--no-sync` flag is required when checking the installed dependency version. A plain `uv run` may resynchronize the environment from the lock file.
-
-## Structure
-
-| Path | Purpose |
-|---|---|
-| `src/google_workspace_mcp/auth/state.py` | downstream OAuth state lifecycle |
-| `src/google_workspace_mcp/auth/bearer.py` | OAuth-only bearer middleware and RFC 9728 challenges |
-| `src/google_workspace_mcp/auth/context.py` | request-scoped authenticated principal metadata |
-| `src/google_workspace_mcp/auth/oauth.py` | OAuth metadata, authorization, token, and registration routes |
-| `src/google_workspace_mcp/common/config.py` | immutable per-service environment configuration |
-| `src/google_workspace_mcp/common/retry.py` | bounded retry policy for Google credential refresh |
-| `src/google_workspace_mcp/google_auth/` | secure Google credential persistence, refresh, and scope validation |
-| `src/google_workspace_mcp/audit/` | fail-closed per-service audit logging |
-| `src/google_workspace_mcp/transport/` | MCP policy, Streamable HTTP composition, and shared factory |
-| `src/google_workspace_mcp/services/` | five isolated service factories plus Gmail, Calendar, Drive, Sheets, and Docs domain tools |
-| `src/google_workspace_mcp/cli/` | five runnable service entry points, shared runner, Google authorization, and OAuth administration |
-| `tests/core/` | OAuth core and package entry point regressions |
-| `tests/services/` | Gmail, Calendar, Drive, Sheets, and Docs provider, domain, authorization, tool, and factory regressions |
-| `deploy/public/`, `deploy/nginx-google-workspace-mcp*.conf` | static OAuth homepage, Google user data privacy policy, and pre-publication nginx surfaces |
-| `pyproject.toml` | package metadata, dependencies, and tool configuration |
-| `NOTICE` | provenance of adapted code |
-
-## Contributing
-
-The project is in early development. Before making a substantial change, open an [issue](https://github.com/hawkxdev/google-workspace-mcp/issues) describing the proposed behavior. Changes must not merge the five services into one process, share credentials between services, or introduce an OAuth bypass.
-
-## Provenance
-
-The project adapts the OAuth 2.1 core from `jimprosser/obsidian-web-mcp` under the MIT License. See `NOTICE` for details.
-
-The downstream OAuth 2.1 core is based on revision `7e6a52d791a50e3bd533df1060217973ab5be1c8`. It includes additional fixes for client and token lifecycles, refresh token rotation, replay detection, and `resource` canonicalization.
-
-The original project's Obsidian storage and Git synchronization functionality was not copied.
-
-This project uses `mcp>=2,<3` and composes remote applications with `mcp.server.mcpserver.MCPServer`; the removed `mcp.server.fastmcp` package is not required.
+- Runtime process-manager configuration is not included.
+- Production Google credentials are not included.
+- The static homepage and privacy policy do not expose MCP routes.
+- Google OAuth publishing and verification are separate states.
+- Restricted Google scopes may require verification and a security assessment.
+- Refresh tokens can be revoked or invalidated by Google.
+- The project calls stable Gmail, Calendar, Drive, Sheets, and Docs APIs directly.
+- Google Developer Preview MCP endpoints are not runtime dependencies.
+- Irreversible Gmail deletion is not supported.
+- Full Calendar administration and permission management are not supported.
+- Raw Google request mappings and arbitrary provider field masks are not public tool inputs.
 
 ## Author
 
 [Sergey Sokolkin (@hawkxdev)](https://github.com/hawkxdev)
 
-## License
+## License and provenance
 
-MIT, see `LICENSE`.
+The project is licensed under MIT. Its OAuth 2.1 core adapts the public `obsidian-web-mcp` project; copyright and attribution details are recorded in [NOTICE](NOTICE).
