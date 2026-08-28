@@ -86,7 +86,7 @@ def test_runtime_nginx_preserves_static_and_service_routes() -> None:
     assert config.count('return 404;') == 1
     assert config.count('limit_req_zone ') == 1
     assert 'zone=gws_authorize:1m rate=5r/s;' in config
-    assert "form-action 'self'" in config
+    assert 'form-action $gws_form_action' in config
     assert "form-action 'none'" not in config
 
     for service, port in (
@@ -130,6 +130,20 @@ def test_runtime_nginx_preserves_static_and_service_routes() -> None:
     assert config.count('proxy_pass ') == 30
     assert config.count('proxy_http_version 1.1;') == 30
     assert config.count('proxy_set_header Connection "";') == 30
+
+
+def test_runtime_nginx_allows_registered_oauth_redirect_schemes() -> None:
+    config = NGINX_CONFIG.read_text(encoding='utf-8')
+
+    csp = _nginx_block(config, 'map $uri $gws_form_action')
+    assert 'default ' in csp
+    assert "'self'" in csp
+    assert '~^/(gmail|calendar|drive|sheets|docs)/oauth/authorize$' in csp
+    assert 'https:' in csp
+    assert 'http://127.0.0.1:*' in csp
+    assert 'http://localhost:*' in csp
+    assert 'add_header Content-Security-Policy ' in config
+    assert 'form-action $gws_form_action' in config
 
 
 def test_bootstrap_nginx_serves_acme_and_public_pages() -> None:
