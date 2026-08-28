@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Owner-operated MCP access to Gmail, Calendar, Drive, Sheets, and Docs through isolated service boundaries.">
+  <title>Hawkx Workspace MCP</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/assets/site.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <a class="wordmark" href="/" aria-label="Hawkx Workspace MCP home">
+      <span>HAWKXDEV</span>
+      <span class="wordmark-divider" aria-hidden="true">&nbsp;</span>
+      <span>WORKSPACE MCP</span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="#boundaries">Security model</a>
+      <a href="/privacy">Privacy</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow">OWNER-OPERATED INFRASTRUCTURE</p>
+        <h1 id="hero-title">Five services.<br>Five trust boundaries.</h1>
+        <p class="hero-summary">Hawkx Workspace MCP is a self-hosted bridge between an owner's MCP clients and one Google Workspace account. Each service keeps its own scopes, credentials, OAuth state, and runtime boundary.</p>
+        <div class="hero-actions">
+          <a class="button" href="#boundaries">View the boundary map</a>
+          <a class="text-link" href="/privacy">Read the privacy policy</a>
+        </div>
+      </div>
+
+      <ol class="service-rail" aria-label="Isolated Google Workspace services">
+        <li class="service service-gmail"><span class="service-code">01</span><strong>Gmail</strong><span>Mail workflows</span></li>
+        <li class="service service-calendar"><span class="service-code">02</span><strong>Calendar</strong><span>Events and availability</span></li>
+        <li class="service service-drive"><span class="service-code">03</span><strong>Drive</strong><span>Files and exports</span></li>
+        <li class="service service-sheets"><span class="service-code">04</span><strong>Sheets</strong><span>Ranges and structure</span></li>
+        <li class="service service-docs"><span class="service-code">05</span><strong>Docs</strong><span>Tabs and structured text</span></li>
+      </ol>
+    </section>
+
+    <section id="boundaries" class="boundary-section" aria-labelledby="boundary-title">
+      <div class="section-heading">
+        <p class="eyebrow">SECURITY MODEL</p>
+        <h2 id="boundary-title">Access is separated before a request reaches Google.</h2>
+      </div>
+      <div class="boundary-grid">
+        <article>
+          <p class="boundary-label">PROCESS</p>
+          <h3>Independent runtimes</h3>
+          <p>A failure in one service does not make the other four part of the same process or credential boundary.</p>
+        </article>
+        <article>
+          <p class="boundary-label">AUTHORIZATION</p>
+          <h3>Minimum service scopes</h3>
+          <p>Each Google grant contains only the scopes required by that service. A Gmail token is not a Drive token.</p>
+        </article>
+        <article>
+          <p class="boundary-label">CONTROL</p>
+          <h3>Owner-directed operations</h3>
+          <p>Google data is accessed only when the owner invokes a tool through an authorized MCP client.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="plain-language" aria-labelledby="plain-title">
+      <p class="eyebrow">PLAIN LANGUAGE</p>
+      <h2 id="plain-title">No advertising profile. No data resale. No shared master credential.</h2>
+      <p>Tool results are returned to the MCP client that requested them. Google tokens remain inside the owner-controlled service environment.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>This is not a Google product. Google Workspace and the individual service names are trademarks of Google LLC.</p>
+    <div>
+      <a href="/privacy">Privacy</a>
+      <a href="https://github.com/hawkxdev/google-workspace-mcp">Source</a>
+      <a href="mailto:hawkxdev@gmail.com">Contact</a>
+    </div>
+  </footer>
+</body>
+</html>

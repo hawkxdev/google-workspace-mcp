@@ -276,7 +276,7 @@ def test_unusable_token_path_fails_before_consent(workspace: Path) -> None:
         return credentials_for(DOCS_SCOPES)
 
     blocked = workspace / 'blocked'
-    blocked.mkdir(mode=0o755)
+    blocked.write_text('not a directory', encoding='utf-8')
     out = io.StringIO()
     err = io.StringIO()
     code = main(

@@ -2,7 +2,7 @@
 
 A project for building five independent remote MCP servers for Google Workspace: Gmail, Google Calendar, Google Drive, Google Sheets, and Google Docs.
 
-> **Status: pre-alpha.** The repository contains five locally runnable MCP service processes with isolated OAuth state, audit targets, path-scoped OAuth routes, secure health and readiness endpoints, immutable per-service configuration, a tested Google credential layer, 18 Gmail tools, 9 Calendar tools, 10 Drive tools, 11 Sheets tools, and 7 Docs tools. Production Google credentials and deployment configuration are not included.
+> **Status: pre-alpha.** The repository contains five locally runnable MCP service processes with isolated OAuth state, audit targets, path-scoped OAuth routes, secure health and readiness endpoints, immutable per-service configuration, a tested Google credential layer, 18 Gmail tools, 9 Calendar tools, 10 Drive tools, 11 Sheets tools, and 7 Docs tools. Production Google credentials and runtime service deployment are not included; static pre-publication web assets are included.
 
 ## Current status
 
@@ -32,7 +32,7 @@ Implemented:
 - 11 Sheets tools for spreadsheet metadata, single and batch A1 range reads with explicit render and date/time formatting modes, single and batch range updates with explicit raw/user-entered parsing, table row appending with insert/overwrite controls, destructive range clearing, and sheet structure management (create, add, rename, copy).
 - 7 Docs tools for document metadata with the full recursive tab tree, bounded typed content reads of one explicit tab, document creation, text insertion, scoped literal replacement with a verified occurrence count, range deletion, and a typed atomic batch of up to twenty operations.
 
-All five entry points register service-owned tools and connect them to separate Google credential boundaries. Production Google credentials and deployment configuration are not included.
+All five entry points register service-owned tools and connect them to separate Google credential boundaries. Production Google credentials and runtime service deployment are not included.
 
 Docs addresses content by UTF-16 code units in half-open ranges, always requests every tab, and never reads the legacy top-level body. Every Docs mutation except document creation requires an explicit tab identifier and the revision returned by the most recent read, so a concurrent edit is refused before any change is applied. The mandatory final newline of a tab cannot be deleted, surrogate pairs cannot be split, and unsupported structures such as inline objects, equations and tables are reported explicitly instead of being flattened into text. Raw provider requests and raw field masks are refused by schema.
 
@@ -45,6 +45,12 @@ Batch operations run in caller order and the provider applies earlier index shif
 A write is never retried automatically. A transport failure, a server error, or any unreadable part of the response after a write is reported as an outcome that may already have been applied, distinct from a plain temporary failure. The caller is told to reread the document and compare its revision instead of repeating the call. A server error carries that outcome even when its body names a reason that would otherwise read as a plain conflict or a rate limit, because the body of a failed write cannot establish that the write did not land.
 
 A document may also be refused for exceeding a supported structural limit: more than two hundred tabs, tabs nested deeper than ten levels, or structural blocks nested deeper than ten levels. That refusal is reported separately from a malformed provider reply and names the limit and its value, because the two require different responses from the caller: a malformed reply is worth retrying, while an oversized document is outside the profile this server supports and needs a human decision. The editor itself admits at most one hundred tabs nested three levels deep, so these limits are a guard against an anomalous reply rather than a restriction on documents a person can author.
+
+## Public OAuth surface
+
+The repository includes a self-contained landing page and Google user data privacy policy under `deploy/public/`. Two nginx 1.24 configurations serve only `/`, `/privacy`, local assets and ACME validation before any MCP process is deployed. The bootstrap configuration establishes the HTTP validation surface; the HTTPS configuration is the publication target after DNS and TLS exist.
+
+The intended public URLs are `https://mcp.hawkxdev.dev/` and `https://mcp.hawkxdev.dev/privacy`. They are not live until the owner completes the separate DNS, TLS and deployment gate.
 
 ## Service status
 
@@ -157,6 +163,7 @@ The `--no-sync` flag is required when checking the installed dependency version.
 | `src/google_workspace_mcp/cli/` | five runnable service entry points, shared runner, Google authorization, and OAuth administration |
 | `tests/core/` | OAuth core and package entry point regressions |
 | `tests/services/` | Gmail, Calendar, Drive, Sheets, and Docs provider, domain, authorization, tool, and factory regressions |
+| `deploy/public/`, `deploy/nginx-google-workspace-mcp*.conf` | static OAuth homepage, Google user data privacy policy, and pre-publication nginx surfaces |
 | `pyproject.toml` | package metadata, dependencies, and tool configuration |
 | `NOTICE` | provenance of adapted code |
 
