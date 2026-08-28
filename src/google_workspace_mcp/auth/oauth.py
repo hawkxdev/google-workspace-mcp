@@ -226,6 +226,7 @@ class OAuthEndpoints:
         return JSONResponse(
             {
                 'issuer': base,
+                'authorization_response_iss_parameter_supported': True,
                 'authorization_endpoint': self._authorization_endpoint_url,
                 'token_endpoint': self._token_endpoint_url,
                 'registration_endpoint': self._registration_endpoint_url,
@@ -428,7 +429,7 @@ class OAuthEndpoints:
             resource=params['resource'],
             fresh_reauthorization=requires_reauthorization,
         )
-        query = {'code': code}
+        query = {'code': code, 'iss': self._canonical_resource}
         if params['state']:
             query['state'] = params['state']
         separator = '&' if '?' in params['redirect_uri'] else '?'

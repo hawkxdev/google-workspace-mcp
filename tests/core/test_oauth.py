@@ -203,6 +203,7 @@ def _authorize(
         urllib.parse.urlsplit(response.headers['location']).query
     )
     assert query['state'] == ['xyz']
+    assert query['iss'] == [RESOURCE]
     return query['code'][0]
 
 
@@ -242,6 +243,7 @@ def test_oauth_metadata_advertises_confidential_code_flow(client):
     assert response.status_code == 200
     body = response.json()
     assert body['issuer'] == RESOURCE
+    assert body['authorization_response_iss_parameter_supported'] is True
     assert body['resource'] == RESOURCE
     assert body['authorization_endpoint'] == f'{RESOURCE}/oauth/authorize'
     assert body['token_endpoint'] == f'{RESOURCE}/oauth/token'
