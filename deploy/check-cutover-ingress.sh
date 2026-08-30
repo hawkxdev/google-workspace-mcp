@@ -104,11 +104,16 @@ probe() {
         --show-error
         --max-time 15
         "${CURL_EXTRA_ARGS[@]}"
-        -X "$method"
         -D "$headers_file"
         -o "$body_file"
         -w "%{http_code}"
     )
+
+    if [[ "$method" == "HEAD" ]]; then
+        curl_cmd+=(--head)
+    else
+        curl_cmd+=(-X "$method")
+    fi
 
     if [[ -n "$content_type" ]]; then
         curl_cmd+=(-H "Content-Type: ${content_type}")

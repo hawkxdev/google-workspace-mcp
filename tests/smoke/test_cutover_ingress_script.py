@@ -91,5 +91,6 @@ def test_cutover_ingress_script_satisfies_contract() -> None:
 
     for method in ('GET', 'HEAD', 'POST'):
         assert method in script
+    assert 'curl_cmd+=(--head)' in script
 
     assert 'oauth_state.sqlite3' in script
