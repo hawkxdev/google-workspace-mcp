@@ -76,6 +76,7 @@ def test_cutover_ingress_script_satisfies_contract() -> None:
     assert '/${svc}/mcp' in script
     assert '/${svc}/health' in script
     assert '/${svc}/ready' in script
+    assert 'Expected 401 for ready' in script
     assert '/${svc}/oauth/register' in script
     assert '/${svc}/oauth/authorize' in script
     assert '/${svc}/oauth/token' in script

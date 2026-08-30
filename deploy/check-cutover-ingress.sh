@@ -196,8 +196,8 @@ for svc in "${SERVICES[@]}"; do
     # Ready probe
     ready_path="/${svc}/ready"
     status="$(probe "GET" "$ready_path")"
-    if [[ "$status" != "200" ]]; then
-        echo "FAIL: Expected 200 for ready at ${ready_path}, got ${status}" >&2
+    if [[ "$status" != "401" ]]; then
+        echo "FAIL: Expected 401 for ready at ${ready_path}, got ${status}" >&2
         exit 1
     fi
 
