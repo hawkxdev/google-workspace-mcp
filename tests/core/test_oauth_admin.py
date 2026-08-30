@@ -38,7 +38,7 @@ def _configure_service(
     root = tmp_path / service
     monkeypatch.setenv(
         f'{prefix}_MCP_PUBLIC_URL',
-        f'https://mcp.example.test/{service}/mcp',
+        f'https://mcp.example.test/{service}',
     )
     monkeypatch.setenv(f'{prefix}_MCP_DOWNLOAD_PATH', str(root / 'downloads'))
     monkeypatch.setenv(
@@ -64,7 +64,7 @@ def _state(config: ServiceConfig) -> OAuthState:
         config.oauth_state_path,
         download_path=config.download_path,
         service_id=config.service_id,
-        resource=config.public_url,
+        resource=config.resource_url,
         readonly_capabilities=(f'{config.service_id}.read',),
         legacy_path=config.legacy_clients_path,
         approved_legacy_client_ids=config.approved_legacy_client_ids,
@@ -113,7 +113,7 @@ def test_client_inventory_and_revoke_are_metadata_only(
         client_id=registered.client.client_id,
         redirect_uri=REDIRECT,
         code_challenge='challenge',
-        resource=config.public_url,
+        resource=config.resource_url,
     )
     state.close()
 
@@ -166,11 +166,11 @@ def test_token_inventory_filter_and_revoke_never_expose_bearer(
     second = state.register_client(['https://second.example.test/callback'])
     first_token = state.issue_access_token(
         client_id=first.client.client_id,
-        resource=config.public_url,
+        resource=config.resource_url,
     )
     state.issue_access_token(
         client_id=second.client.client_id,
-        resource=config.public_url,
+        resource=config.resource_url,
     )
     state.close()
 
@@ -214,7 +214,7 @@ def test_backup_is_online_reopenable_and_secret_free(
         client_id=registered.client.client_id,
         redirect_uri=REDIRECT,
         code_challenge=CHALLENGE,
-        resource=config.public_url,
+        resource=config.resource_url,
     )
     issued = state.redeem_authorization_code(
         code=authorization_code,
@@ -222,9 +222,8 @@ def test_backup_is_online_reopenable_and_secret_free(
         client_secret=registered.client_secret,
         redirect_uri=REDIRECT,
         code_verifier=VERIFIER,
-        resource=config.public_url,
+        resource=config.resource_url,
     )
-    state.close()
     backup = tmp_path / 'backup' / 'oauth.sqlite3'
 
     result, stdout, stderr = _run('calendar', 'backup', str(backup))
@@ -579,7 +578,7 @@ def test_failed_token_revoke_does_not_reflect_bearer(
         registered = state.register_client([REDIRECT])
         issued = state.issue_access_token(
             client_id=registered.client.client_id,
-            resource=config.public_url,
+            resource=config.resource_url,
         )
 
     result, stdout, stderr = _run(
@@ -615,3 +614,33 @@ def test_swapped_service_path_is_refused_without_writes(
         assert fresh_gmail.list_clients() == (gmail_client,)
     with _state(drive) as fresh_drive:
         assert fresh_drive.list_clients() == (drive_client,)
+
+
+def test_admin_requires_exact_resource_url_state_owner(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = _configure_service(monkeypatch, tmp_path, 'gmail')
+    with _state(config) as state:
+        state.register_client([REDIRECT], client_name='Matching Resource')
+
+    result, stdout, stderr = _run('gmail', 'clients', 'list')
+    assert result == 0
+    assert stderr == ''
+    assert len(json.loads(stdout)) == 1
+
+    mismatched_path = tmp_path / 'mismatched' / 'oauth.sqlite3'
+    mismatched_config = _configure_service(
+        monkeypatch, tmp_path, 'gmail', state_path=mismatched_path
+    )
+    with OAuthState(
+        mismatched_config.oauth_state_path,
+        download_path=mismatched_config.download_path,
+        service_id=mismatched_config.service_id,
+        resource=mismatched_config.public_url,
+    ) as old_state:
+        old_state.register_client([REDIRECT], client_name='Old Issuer Owner')
+
+    result_bad, stdout_bad, stderr_bad = _run('gmail', 'clients', 'list')
+    assert result_bad == 1
+    assert stdout_bad == ''
+    assert json.loads(stderr_bad) == {'error': 'OAuth state owner mismatch'}

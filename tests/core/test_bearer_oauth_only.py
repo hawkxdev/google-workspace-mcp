@@ -30,7 +30,9 @@ from google_workspace_mcp.auth.state import (
 )
 from google_workspace_mcp.common.config import ServiceConfig
 
+ISSUER = 'https://mcp.example.test/gmail'
 RESOURCE = 'https://mcp.example.test/gmail/mcp'
+FOREIGN_ISSUER = 'https://mcp.example.test/drive'
 FOREIGN_RESOURCE = 'https://mcp.example.test/drive/mcp'
 RESOURCE_METADATA = (
     'https://mcp.example.test/.well-known/oauth-protected-resource/gmail/mcp'
@@ -42,7 +44,7 @@ def _service_config(state_dir: Path) -> ServiceConfig:
     """Build isolated service config."""
     return ServiceConfig(
         service_id='gmail',
-        public_url=RESOURCE,
+        public_url=ISSUER,
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,
@@ -77,7 +79,7 @@ def oauth_state(
         service_config.oauth_state_path,
         download_path=tmp_path / 'downloads',
         service_id=service_config.service_id,
-        resource=service_config.public_url,
+        resource=service_config.resource_url,
         readonly_capabilities=READONLY_CAPABILITIES,
         access_token_ttl_seconds=service_config.access_token_ttl_seconds,
         refresh_token_ttl_seconds=service_config.refresh_token_ttl_seconds,
@@ -237,7 +239,12 @@ def test_middleware_rejects_mismatched_service(
     service_config: ServiceConfig,
     oauth_state: OAuthState,
 ) -> None:
-    mismatched = replace(service_config, service_id='drive')
+    mismatched = replace(
+        service_config,
+        service_id='drive',
+        public_url='https://mcp.example.test/drive',
+        mcp_path='/drive/mcp',
+    )
 
     with pytest.raises(ValueError, match='OAuth state service'):
         BearerAuthMiddleware(
@@ -249,7 +256,10 @@ def test_middleware_rejects_mismatched_resource(
     service_config: ServiceConfig,
     oauth_state: OAuthState,
 ) -> None:
-    mismatched = replace(service_config, public_url=FOREIGN_RESOURCE)
+    mismatched = replace(
+        service_config,
+        public_url='https://other.example.test/gmail',
+    )
 
     with pytest.raises(ValueError, match='OAuth state resource'):
         BearerAuthMiddleware(
@@ -267,10 +277,10 @@ def test_middleware_rejects_mismatched_resource(
         '/oauth/token',
         '/oauth/register',
         '/.well-known/oauth-protected-resource/gmail/mcp',
-        '/.well-known/oauth-authorization-server/gmail/mcp',
-        '/gmail/mcp/oauth/authorize',
-        '/gmail/mcp/oauth/token',
-        '/gmail/mcp/oauth/register',
+        '/.well-known/oauth-authorization-server/gmail',
+        '/gmail/oauth/authorize',
+        '/gmail/oauth/token',
+        '/gmail/oauth/register',
     ],
 )
 def test_middleware_rejects_public_mcp_path_collision(
@@ -280,31 +290,27 @@ def test_middleware_rejects_public_mcp_path_collision(
 ) -> None:
     mismatched = replace(service_config, mcp_path=mcp_path)
 
-    with pytest.raises(ValueError, match='MCP path'):
+    with pytest.raises(ValueError, match='collides|service identity|MCP path'):
         BearerAuthMiddleware(
             Starlette(), config=mismatched, oauth_state=oauth_state
         )
 
 
 @pytest.mark.parametrize(
-    ('mcp_path', 'method', 'expected_status'),
+    ('method', 'expected_status'),
     [
-        ('/', 'GET', 401),
-        ('/', 'HEAD', 401),
-        ('/', 'POST', 401),
-        ('/gmail/mcp', 'GET', 200),
-        ('/gmail/mcp', 'HEAD', 200),
-        ('/gmail/mcp', 'POST', 401),
+        ('GET', 200),
+        ('HEAD', 200),
+        ('POST', 401),
     ],
 )
 def test_root_exemption_respects_mcp_path_and_method(
     service_config: ServiceConfig,
     oauth_state: OAuthState,
-    mcp_path: str,
     method: str,
     expected_status: int,
 ) -> None:
-    config = replace(service_config, mcp_path=mcp_path)
+    config = service_config
 
     async def root(_: Request) -> PlainTextResponse:
         """Return root endpoint response."""
@@ -322,6 +328,38 @@ def test_root_exemption_respects_mcp_path_and_method(
     assert response.status_code == expected_status
 
 
+@pytest.mark.parametrize(
+    'path',
+    [
+        '/.well-known/oauth-authorization-server',
+        '/.well-known/oauth-protected-resource',
+        '/oauth/authorize',
+        '/oauth/token',
+        '/oauth/register',
+    ],
+)
+def test_unscoped_oauth_paths_require_auth(
+    service_config: ServiceConfig,
+    oauth_state: OAuthState,
+    path: str,
+) -> None:
+    async def root_oauth(_: Request) -> PlainTextResponse:
+        """Return root OAuth response."""
+        return PlainTextResponse('unsafe')
+
+    app = Starlette(routes=[Route(path, root_oauth)])
+    app.add_middleware(
+        BearerAuthMiddleware,
+        config=service_config,
+        oauth_state=oauth_state,
+    )
+    with TestClient(app) as test_client:
+        response = test_client.get(path)
+
+    assert response.status_code == 401
+    assert response.text != 'unsafe'
+
+
 def test_missing_auth_returns_rfc9728_challenge(
     client: TestClient,
 ) -> None:
@@ -333,7 +371,20 @@ def test_missing_auth_returns_rfc9728_challenge(
     assert challenge.startswith('Bearer ')
     assert f'resource_metadata="{RESOURCE_METADATA}"' in challenge
     assert 'scope="gmail.read"' in challenge
-    assert 'error=' not in challenge
+
+
+def test_challenge_uses_exact_endpoint_resource_metadata(
+    client: TestClient,
+) -> None:
+    response = client.post('/gmail/mcp')
+
+    assert response.status_code == 401
+    assert (
+        'resource_metadata="https://mcp.example.test/'
+        '.well-known/oauth-protected-resource/gmail/mcp"'
+        in response.headers['WWW-Authenticate']
+    )
+    assert 'error=' not in response.headers['WWW-Authenticate']
 
 
 def test_unsupported_authentication_scheme_returns_plain_challenge(
@@ -529,6 +580,21 @@ def test_token_for_foreign_resource_is_rejected(
     assert response.json() == {'error': 'Invalid token'}
 
 
+def test_token_bound_to_issuer_audience_is_rejected(
+    client: TestClient,
+    oauth_state: OAuthState,
+) -> None:
+    token, _ = _issue_token(oauth_state, resource=ISSUER)
+
+    response = client.get(
+        '/gmail/mcp', headers={'Authorization': f'Bearer {token}'}
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {'error': 'Invalid token'}
+    assert 'error="invalid_token"' in response.headers['WWW-Authenticate']
+
+
 def test_master_token_environment_has_no_authentication_path(
     state_dir: Path,
     tmp_path: Path,
@@ -541,7 +607,7 @@ def test_master_token_environment_has_no_authentication_path(
         config.oauth_state_path,
         download_path=tmp_path / 'downloads',
         service_id=config.service_id,
-        resource=config.public_url,
+        resource=config.resource_url,
         readonly_capabilities=READONLY_CAPABILITIES,
     )
     try:

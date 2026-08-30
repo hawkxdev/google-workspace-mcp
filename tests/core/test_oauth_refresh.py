@@ -24,6 +24,7 @@ from google_workspace_mcp.common.config import ServiceConfig
 
 LOGIN_USERNAME = 'test-user'
 LOGIN_PASSWORD = 'test-pass'
+ISSUER = 'https://mcp.example.test/gmail'
 RESOURCE = 'https://mcp.example.test/gmail/mcp'
 REDIRECT = 'https://client.example.test/callback'
 READONLY = ('gmail_get_message', 'gmail_search')
@@ -284,7 +285,7 @@ def service_config(tmp_path: Path) -> ServiceConfig:
     state_dir.mkdir(mode=0o700, parents=True)
     return ServiceConfig(
         service_id='gmail',
-        public_url=RESOURCE,
+        public_url=ISSUER,
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,
@@ -315,7 +316,7 @@ def oauth_state(
         service_config.oauth_state_path,
         download_path=downloads,
         service_id=service_config.service_id,
-        resource=service_config.public_url,
+        resource=service_config.resource_url,
         readonly_capabilities=READONLY,
         legacy_path=service_config.legacy_clients_path,
         approved_legacy_client_ids=service_config.approved_legacy_client_ids,
@@ -355,14 +356,14 @@ def endpoint(endpoints: OAuthEndpoints) -> TestClient:
 def _endpoint_authorize(endpoint: TestClient) -> tuple[str, dict]:
     """Authorize endpoint test client."""
     registered = endpoint.post(
-        '/gmail/mcp/oauth/register',
+        '/gmail/oauth/register',
         json={'client_name': 'Headless', 'redirect_uris': [REDIRECT]},
     )
     assert registered.status_code == 201
     client_id = registered.json()['client_id']
     client_secret = registered.json()['client_secret']
     authorized = endpoint.post(
-        '/gmail/mcp/oauth/authorize',
+        '/gmail/oauth/authorize',
         data={
             'response_type': 'code',
             'client_id': client_id,
@@ -378,7 +379,7 @@ def _endpoint_authorize(endpoint: TestClient) -> tuple[str, dict]:
     assert authorized.status_code == 302
     code = authorized.headers['location'].split('code=')[1].split('&')[0]
     token = endpoint.post(
-        '/gmail/mcp/oauth/token',
+        '/gmail/oauth/token',
         data={
             'grant_type': 'authorization_code',
             'code': code,
@@ -400,7 +401,7 @@ def test_metadata_advertises_refresh_token_grant(
     endpoint: TestClient,
 ) -> None:
     payload = endpoint.get(
-        '/.well-known/oauth-authorization-server/gmail/mcp'
+        '/.well-known/oauth-authorization-server/gmail'
     ).json()
     assert 'refresh_token' in payload['grant_types_supported']
 
@@ -411,7 +412,7 @@ def test_token_endpoint_rotates_without_client_secret(
     client_id, issued = _endpoint_authorize(endpoint)
     assert issued['refresh_token']
     rotated = endpoint.post(
-        '/gmail/mcp/oauth/token',
+        '/gmail/oauth/token',
         data={
             'grant_type': 'refresh_token',
             'refresh_token': issued['refresh_token'],
@@ -432,7 +433,7 @@ def test_token_endpoint_rejects_mismatched_resource(
 ) -> None:
     client_id, issued = _endpoint_authorize(endpoint)
     rotated = endpoint.post(
-        '/gmail/mcp/oauth/token',
+        '/gmail/oauth/token',
         data={
             'grant_type': 'refresh_token',
             'refresh_token': issued['refresh_token'],
@@ -451,7 +452,7 @@ def test_endpoints_reject_resource_mismatch_at_construction(
 ) -> None:
     moved_config = ServiceConfig(
         service_id=service_config.service_id,
-        public_url='https://moved.example.test/gmail/mcp',
+        public_url='https://moved.example.test/gmail',
         mcp_path=service_config.mcp_path,
         host=service_config.host,
         port=service_config.port,
@@ -484,7 +485,7 @@ def test_token_endpoint_rejects_replayed_refresh(
 ) -> None:
     client_id, issued = _endpoint_authorize(endpoint)
     first = endpoint.post(
-        '/gmail/mcp/oauth/token',
+        '/gmail/oauth/token',
         data={
             'grant_type': 'refresh_token',
             'refresh_token': issued['refresh_token'],
@@ -494,7 +495,7 @@ def test_token_endpoint_rejects_replayed_refresh(
     )
     assert first.status_code == 200
     replay = endpoint.post(
-        '/gmail/mcp/oauth/token',
+        '/gmail/oauth/token',
         data={
             'grant_type': 'refresh_token',
             'refresh_token': issued['refresh_token'],
@@ -512,7 +513,7 @@ def test_rotation_is_audited_without_raw_credentials(
 ) -> None:
     client_id, issued = _endpoint_authorize(endpoint)
     rotated = endpoint.post(
-        '/gmail/mcp/oauth/token',
+        '/gmail/oauth/token',
         data={
             'grant_type': 'refresh_token',
             'refresh_token': issued['refresh_token'],
@@ -545,7 +546,7 @@ def test_refused_rotation_is_audited_too(
 ) -> None:
     client_id, issued = _endpoint_authorize(endpoint)
     refused = endpoint.post(
-        '/gmail/mcp/oauth/token',
+        '/gmail/oauth/token',
         data={
             'grant_type': 'refresh_token',
             'refresh_token': issued['refresh_token'],
@@ -573,6 +574,7 @@ def test_refresh_state_travels_with_the_state_backup(
 ) -> None:
     client_id, issued = _endpoint_authorize(endpoint)
     destination = tmp_path / 'backup' / 'oauth-backup.sqlite3'
+    destination.parent.mkdir(mode=0o700, parents=True)
     oauth_state.backup(destination)
     connection = sqlite3.connect(destination)
     try:

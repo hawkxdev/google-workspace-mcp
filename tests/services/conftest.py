@@ -169,7 +169,7 @@ def service_config(tmp_path: Path) -> ServiceConfig:
     downloads.mkdir(mode=0o700)
     return ServiceConfig(
         service_id='gmail',
-        public_url='https://127.0.0.1:8431',
+        public_url='https://mcp.example.test/gmail',
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,

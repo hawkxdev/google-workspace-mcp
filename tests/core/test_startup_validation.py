@@ -37,7 +37,7 @@ def _setup_service_env(
     for key, value in {
         f'{prefix}_MCP_HOST': '127.0.0.1',
         f'{prefix}_MCP_PORT': port,
-        f'{prefix}_MCP_PUBLIC_URL': f'https://127.0.0.1:{port}',
+        f'{prefix}_MCP_PUBLIC_URL': f'https://mcp.example.test/{service}',
         f'{prefix}_MCP_PATH': f'/{service}/mcp',
         f'{prefix}_MCP_DOWNLOAD_PATH': str(dl_dir),
         f'{prefix}_OAUTH_STATE_PATH': str(state_path),
@@ -164,7 +164,7 @@ def test_startup_validation_rejects_invalid_mcp_path(
     prefix = service.upper()
     monkeypatch.setenv(f'{prefix}_MCP_PATH', invalid_path)
     mod = importlib.import_module(f'google_workspace_mcp.cli.{service}')
-    with pytest.raises(ValueError, match='MCP_PATH|MCP path'):
+    with pytest.raises(ValueError, match='MCP_PATH|MCP path|service identity'):
         mod.run_server()
 
 
@@ -188,16 +188,21 @@ class _CollidingExtension(Extension):
 
 @pytest.mark.parametrize('service', SERVICES)
 @pytest.mark.parametrize(
-    'colliding_path',
-    ['/health', '/oauth/token', '/.well-known/oauth-authorization-server'],
+    'colliding_template',
+    [
+        '/health',
+        '/{service}/oauth/token',
+        '/.well-known/oauth-authorization-server/{service}',
+    ],
 )
 def test_startup_validation_rejects_route_collision(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     service: str,
-    colliding_path: str,
+    colliding_template: str,
 ) -> None:
     _setup_service_env(monkeypatch, tmp_path, service)
+    colliding_path = colliding_template.format(service=service)
     ext = _CollidingExtension(colliding_path)
     mod = importlib.import_module(f'google_workspace_mcp.cli.{service}')
     with pytest.raises(ValueError, match='covers auth-exempt path'):

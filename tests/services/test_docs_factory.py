@@ -47,7 +47,7 @@ def docs_config(tmp_path: Path) -> ServiceConfig:
     downloads.mkdir(mode=0o700)
     return ServiceConfig(
         service_id='docs',
-        public_url='https://127.0.0.1:8435',
+        public_url='https://mcp.example.test/docs',
         mcp_path='/docs/mcp',
         host='127.0.0.1',
         port=8435,
@@ -136,7 +136,7 @@ def test_factory_default_config_from_env(
     downloads.mkdir(mode=0o700)
     for key, value in {
         'DOCS_MCP_PORT': '8435',
-        'DOCS_MCP_PUBLIC_URL': 'https://127.0.0.1:8435',
+        'DOCS_MCP_PUBLIC_URL': 'https://mcp.example.test/docs',
         'DOCS_MCP_PATH': '/docs/mcp',
         'DOCS_OAUTH_STATE_PATH': str(root / 'oauth.db'),
         'DOCS_GOOGLE_TOKEN_PATH': str(root / 'token.json'),

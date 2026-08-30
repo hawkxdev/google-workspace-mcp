@@ -1,7 +1,6 @@
 # MCP Protocol Contract
 
-Each Hawkx Workspace MCP service exposes one stateless Streamable HTTP MCP endpoint and an OAuth 2.1 authorization surface.
-
+Each Hawkx Workspace MCP service exposes one stateless Streamable HTTP MCP endpoint (`/<service>/mcp`) and an OAuth 2.1 authorization surface under its service-base issuer (`https://<host>/<service>`).
 The five services use the same transport contract but different resources, paths, tools, credentials, and OAuth state.
 
 ## Transport Model
@@ -33,15 +32,14 @@ The MCP path can be configured per service. It cannot collide with OAuth, health
 
 | Method | Route | Authentication | Purpose |
 |---|---|---|---|
-| `GET` | `/health` | Public | Process liveness |
-| `GET` | `/ready` | Bearer token | Service readiness |
-| `GET`, `POST` | configured MCP path | Bearer token | Streamable HTTP MCP |
-| `GET` | authorization-server metadata path | Public | OAuth server discovery |
-| `GET` | protected-resource metadata path | Public | MCP resource discovery |
-| `GET`, `POST` | `/oauth/authorize` | OAuth flow | Owner authorization |
-| `POST` | `/oauth/token` | OAuth flow | Code and refresh grants |
-| `POST` | `/oauth/register` | Public registration | Dynamic client registration |
-
+| `GET` | `/health` (proxied as `/<service>/health`) | Public | Process liveness |
+| `GET` | `/ready` (proxied as `/<service>/ready`) | Bearer token | Service readiness |
+| `GET`, `POST` | `/<service>/mcp` | Bearer token | Streamable HTTP MCP (canonical protected resource) |
+| `GET` | `/.well-known/oauth-authorization-server/<service>` | Public | OAuth authorization-server discovery (service-base) |
+| `GET` | `/.well-known/oauth-protected-resource/<service>/mcp` | Public | Protected-resource metadata discovery (MCP resource) |
+| `GET`, `POST` | `/<service>/oauth/authorize` | OAuth flow | Owner authorization |
+| `POST` | `/<service>/oauth/token` | OAuth flow | Code and refresh grants |
+| `POST` | `/<service>/oauth/register` | Public registration | Dynamic client registration |
 The production reverse proxy exposes process liveness and readiness as `/<service>/health` and `/<service>/ready`, rewriting them to the process-local `/health` and `/ready` routes. Readiness remains bearer protected.
 
 When the MCP path is not `/`, a root `GET` or `HEAD` probe returns `200` and identifies the supported MCP protocol version.
@@ -70,35 +68,35 @@ Readiness confirms that the authenticated service surface is available. It does 
 
 ## OAuth Discovery
 
-The authorization-server metadata route is scoped to the configured public resource path:
+The authorization-server metadata route is scoped to the service-base issuer path:
 
 ```text
-/.well-known/oauth-authorization-server<resource-path>
+/.well-known/oauth-authorization-server/<service>
 ```
 
-The protected-resource metadata route is:
+The protected-resource metadata route is scoped to the canonical protected resource path:
 
 ```text
-/.well-known/oauth-protected-resource<resource-path>
+/.well-known/oauth-protected-resource/<service>/mcp
 ```
 
 Authorization-server metadata advertises:
 
-- canonical issuer and resource;
+- canonical service-base issuer (`https://<host>/<service>`);
 - RFC 9207 authorization-response issuer support;
-- authorization endpoint;
-- token endpoint;
-- registration endpoint;
+- authorization endpoint (`https://<host>/<service>/oauth/authorize`);
+- token endpoint (`https://<host>/<service>/oauth/token`);
+- registration endpoint (`https://<host>/<service>/oauth/register`);
 - authorization-code and refresh-token grants;
 - PKCE S256;
 - `client_secret_post`.
 
-Successful authorization redirects include an `iss` parameter that exactly matches the canonical metadata issuer.
+Successful authorization redirects include an `iss` parameter that exactly matches the canonical service-base metadata issuer.
 
 Protected-resource metadata advertises:
 
-- the canonical resource;
-- its authorization server;
+- the canonical protected resource (`https://<host>/<service>/mcp`);
+- its authorization server (`https://<host>/<service>`);
 - bearer tokens in the HTTP header.
 
 See [Authentication and Credential Operations](auth.md) for authorization and token lifecycle details.
@@ -125,7 +123,7 @@ Each accepted request receives request-scoped principal metadata. The context is
 
 ## Authorization Challenges
 
-An unauthenticated protected request returns `401` and a bearer challenge containing the protected-resource metadata URL.
+An unauthenticated protected request returns `401` and a bearer challenge containing the protected-resource metadata URL (`/.well-known/oauth-protected-resource/<service>/mcp`).
 
 A malformed bearer request returns `400` with `invalid_request`.
 
@@ -295,9 +293,9 @@ Provider URLs, raw error bodies, tokens, client secrets, authorization codes, an
 ## Service Isolation
 
 Each process owns:
-
-- one canonical public resource;
-- one MCP path;
+- one service-base issuer (`https://<host>/<service>`);
+- one canonical protected resource URL (`https://<host>/<service>/mcp`);
+- one MCP path (`/<service>/mcp`);
 - one OAuth state database;
 - one Google credential path;
 - one scope set;

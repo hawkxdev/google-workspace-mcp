@@ -20,6 +20,7 @@ from google_workspace_mcp.transport.authorization import PolicyMCPServer
 from google_workspace_mcp.transport.extensions import Extension
 from google_workspace_mcp.transport.server import build_app
 
+ISSUER = 'https://mcp.example.test/gmail'
 RESOURCE = 'https://mcp.example.test/gmail/mcp'
 LOGIN_USER = 'admin'
 LOGIN_PASS = 'secret-password'
@@ -31,7 +32,7 @@ def service_config(tmp_path: Path) -> ServiceConfig:
     state_dir.mkdir(mode=0o700, parents=True)
     return ServiceConfig(
         service_id='gmail',
-        public_url=RESOURCE,
+        public_url=ISSUER,
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,
@@ -60,7 +61,7 @@ def oauth_state(
     with OAuthState(
         service_config.oauth_state_path,
         service_id='gmail',
-        resource=RESOURCE,
+        resource=service_config.resource_url,
         download_path=download_dir,
     ) as state:
         yield state
@@ -87,50 +88,6 @@ def test_routes_and_forwarded_headers(
     assert client.get(service_config.mcp_path).status_code in {401, 405, 400}
 
 
-def test_assembled_app_default_root_requires_auth(
-    service_config: ServiceConfig,
-    tmp_path: Path,
-) -> None:
-    root_resource = 'https://mcp.example.test'
-    state_dir = tmp_path / 'root_state'
-    state_dir.mkdir(mode=0o700, parents=True)
-    root_cfg = ServiceConfig(
-        service_id='gmail',
-        public_url=root_resource,
-        mcp_path='/',
-        host='127.0.0.1',
-        port=8431,
-        download_path=state_dir / 'downloads',
-        oauth_state_path=state_dir / 'oauth_root.sqlite3',
-        google_token_path=state_dir / 'google_token.json',
-        audit_log_path=state_dir / 'audit.jsonl',
-        oauth_login_username=LOGIN_USER,
-        oauth_login_password=LOGIN_PASS,
-        allowed_hosts=(),
-        forwarded_allow_ips=('127.0.0.1',),
-        legacy_clients_path=None,
-        approved_legacy_client_ids=frozenset(),
-        access_token_ttl_seconds=86400,
-        refresh_token_ttl_seconds=2592000,
-    )
-    with OAuthState(
-        root_cfg.oauth_state_path,
-        service_id='gmail',
-        resource=root_resource,
-        download_path=root_cfg.download_path,
-    ) as root_state:
-        server = PolicyMCPServer('gmail')
-        app = build_app(root_cfg, root_state, server)
-        paths = [getattr(r, 'path', None) for r in app.routes]
-        assert '/' in paths
-
-        with TestClient(app) as client:
-            for method in ('get', 'head', 'post'):
-                r = getattr(client, method)('/')
-                assert r.status_code in {401, 400}
-                assert 'MCP-Protocol-Version' not in r.headers
-
-
 def test_assembled_app_offroot_probe_is_liveness_only(
     service_config: ServiceConfig,
     oauth_state: OAuthState,
@@ -155,6 +112,26 @@ def test_assembled_app_offroot_probe_is_liveness_only(
         assert client.post('/').status_code in {401, 400}
         assert client.get(service_config.mcp_path).status_code in {401, 400}
         assert client.post(service_config.mcp_path).status_code in {401, 400}
+
+
+def test_assembled_app_disables_slash_redirects(
+    service_config: ServiceConfig,
+    oauth_state: OAuthState,
+) -> None:
+    server = PolicyMCPServer('gmail')
+    app = build_app(service_config, oauth_state, server)
+
+    assert app.router.redirect_slashes is False
+    with TestClient(app) as client:
+        for path in (
+            '/gmail/mcp/',
+            '/gmail/oauth/authorize/',
+            '/.well-known/oauth-protected-resource/gmail/mcp/',
+            '/.well-known/oauth-authorization-server/gmail/',
+        ):
+            response = client.get(path, follow_redirects=False)
+            assert response.status_code != 307
+            assert 'location' not in response.headers
 
 
 @pytest.mark.parametrize('value', ['/', '/mcp', '/gmail/mcp', '/a-b_c'])
@@ -430,7 +407,7 @@ def test_bearer_collision_guards_health_and_ready(
     for bad_path in ('/health', '/ready'):
         bad_cfg = ServiceConfig(
             service_id='gmail',
-            public_url=RESOURCE,
+            public_url=ISSUER,
             mcp_path=bad_path,
             host='127.0.0.1',
             port=8431,
@@ -448,7 +425,7 @@ def test_bearer_collision_guards_health_and_ready(
             refresh_token_ttl_seconds=2592000,
         )
         with pytest.raises(
-            ValueError, match='MCP path collides with a public auth route'
+            ValueError, match='collides|service identity|MCP path'
         ):
             BearerAuthMiddleware(
                 app=JSONResponse({}),

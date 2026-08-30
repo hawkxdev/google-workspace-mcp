@@ -115,7 +115,7 @@ def _state_from_args(args: argparse.Namespace) -> OAuthState:
         state_path,
         download_path=args.download_path or config.download_path,
         service_id=config.service_id,
-        resource=config.public_url,
+        resource=config.resource_url,
         legacy_path=args.legacy_path or config.legacy_clients_path,
         approved_legacy_client_ids=approved_legacy_client_ids,
         access_token_ttl_seconds=(

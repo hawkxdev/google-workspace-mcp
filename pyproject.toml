@@ -26,6 +26,7 @@ google-mcp-sheets = 'google_workspace_mcp.cli.sheets:main'
 google-mcp-docs = 'google_workspace_mcp.cli.docs:main'
 google-mcp-oauth = 'google_workspace_mcp.cli.oauth_admin:main'
 google-mcp-authorize = 'google_workspace_mcp.cli.authorize:main'
+google-mcp-cutover = 'google_workspace_mcp.cli.cutover:main'
 
 [dependency-groups]
 dev = [
@@ -66,6 +67,9 @@ select = ['E', 'F', 'I', 'SIM', 'UP', 'S', 'G']
     'S105',
     'S106',
 ]
+'tests/core/test_cutover_cli.py' = ['S101', 'S103', 'S108']
+# Systemd invocation allowances.
+'src/google_workspace_mcp/cli/cutover.py' = ['S603', 'S607']
 # OAuth state allowances.
 'src/google_workspace_mcp/auth/state.py' = ['E501', 'SIM105', 'S101']
 # Google token URI allowance.
@@ -74,6 +78,8 @@ select = ['E', 'F', 'I', 'SIM', 'UP', 'S', 'G']
 'tests/core/test_google_auth.py' = ['S103', 'S107', 'S603']
 # Consent fixture defaults are the subject under test.
 'tests/core/test_google_consent.py' = ['S107']
+# Ingress script test allowances.
+'tests/smoke/test_cutover_ingress_script.py' = ['S603', 'S607']
 
 [tool.ruff.lint.isort]
 known-first-party = ['google_workspace_mcp']

@@ -15,6 +15,7 @@ from google_workspace_mcp.auth.oauth import protected_resource_metadata_url
 from google_workspace_mcp.auth.state import OAuthState
 from google_workspace_mcp.common.config import ServiceConfig
 
+ISSUER = 'https://mcp.example.test/gmail'
 RESOURCE = 'https://mcp.example.test/gmail/mcp'
 RESOURCE_METADATA = (
     'https://mcp.example.test/.well-known/oauth-protected-resource/gmail/mcp'
@@ -32,7 +33,7 @@ def service_config(state_dir: Path) -> ServiceConfig:
     """Build pinned service config."""
     return ServiceConfig(
         service_id='gmail',
-        public_url=RESOURCE,
+        public_url=ISSUER,
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,
@@ -61,7 +62,7 @@ def oauth_state(
         service_config.oauth_state_path,
         download_path=tmp_path / 'downloads',
         service_id=service_config.service_id,
-        resource=service_config.public_url,
+        resource=service_config.resource_url,
     )
     try:
         yield state
@@ -92,12 +93,12 @@ def client(
                 metadata,
             ),
             Route(
-                '/.well-known/oauth-authorization-server/gmail/mcp',
+                '/.well-known/oauth-authorization-server/gmail',
                 metadata,
             ),
-            Route('/gmail/mcp/oauth/authorize', metadata),
-            Route('/gmail/mcp/oauth/token', metadata),
-            Route('/gmail/mcp/oauth/register', metadata),
+            Route('/gmail/oauth/authorize', metadata),
+            Route('/gmail/oauth/token', metadata),
+            Route('/gmail/oauth/register', metadata),
         ]
     )
     app.add_middleware(
@@ -145,10 +146,9 @@ def test_percent_encoded_resource_metadata_route_is_public(
     tmp_path: Path,
 ) -> None:
     # 1. Build encoded config
-    resource = 'https://mcp.example.test/gmail%2Fmcp'
     config = ServiceConfig(
         service_id='gmail',
-        public_url=resource,
+        public_url=ISSUER,
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,
@@ -170,7 +170,7 @@ def test_percent_encoded_resource_metadata_route_is_public(
         config.oauth_state_path,
         download_path=tmp_path / 'downloads',
         service_id=config.service_id,
-        resource=config.public_url,
+        resource=config.resource_url,
     )
 
     async def metadata(_: Request) -> PlainTextResponse:
@@ -225,7 +225,7 @@ def test_resource_metadata_route_is_public(client: TestClient) -> None:
 
 def test_server_metadata_route_is_public(client: TestClient) -> None:
     response = client.get(
-        '/.well-known/oauth-authorization-server/gmail/mcp',
+        '/.well-known/oauth-authorization-server/gmail',
         headers=SPOOFED_HEADERS,
     )
 
@@ -236,9 +236,9 @@ def test_server_metadata_route_is_public(client: TestClient) -> None:
 @pytest.mark.parametrize(
     'path',
     [
-        '/gmail/mcp/oauth/authorize',
-        '/gmail/mcp/oauth/token',
-        '/gmail/mcp/oauth/register',
+        '/gmail/oauth/authorize',
+        '/gmail/oauth/token',
+        '/gmail/oauth/register',
     ],
 )
 def test_operational_oauth_routes_are_public(
@@ -256,7 +256,7 @@ def test_forwarded_allow_ips_default_is_loopback_only(
     monkeypatch.delenv('GMAIL_MCP_FORWARDED_ALLOW_IPS', raising=False)
     monkeypatch.setenv('GMAIL_OAUTH_LOGIN_USERNAME', 'admin')
     monkeypatch.setenv('GMAIL_OAUTH_LOGIN_PASSWORD', 'test-password')
-    monkeypatch.setenv('GMAIL_MCP_PUBLIC_URL', RESOURCE)
+    monkeypatch.setenv('GMAIL_MCP_PUBLIC_URL', ISSUER)
 
     config = ServiceConfig.from_env('gmail')
     assert config.forwarded_allow_ips == ('127.0.0.1',)

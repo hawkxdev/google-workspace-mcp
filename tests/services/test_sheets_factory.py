@@ -47,7 +47,7 @@ def _config(tmp_path: Path) -> ServiceConfig:
     downloads.mkdir(mode=0o700)
     return ServiceConfig(
         service_id='sheets',
-        public_url='https://127.0.0.1:8434',
+        public_url='https://mcp.example.test/sheets',
         mcp_path='/sheets/mcp',
         host='127.0.0.1',
         port=8434,
@@ -137,7 +137,7 @@ def test_factory_default_config_from_env(
     downloads.mkdir(mode=0o700)
     for k, v in {
         'SHEETS_MCP_PORT': '8434',
-        'SHEETS_MCP_PUBLIC_URL': 'https://127.0.0.1:8434',
+        'SHEETS_MCP_PUBLIC_URL': 'https://mcp.example.test/sheets',
         'SHEETS_MCP_PATH': '/sheets/mcp',
         'SHEETS_OAUTH_STATE_PATH': str(root / 'oauth.db'),
         'SHEETS_GOOGLE_TOKEN_PATH': str(root / 'token.json'),

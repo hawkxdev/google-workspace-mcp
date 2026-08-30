@@ -21,7 +21,9 @@ from google_workspace_mcp.common.config import ServiceConfig
 
 LOGIN_USERNAME = 'test-user'
 LOGIN_PASSWORD = 'test-pass'
+ISSUER = 'https://mcp.example.test/gmail'
 PATH_RESOURCE = 'https://mcp.example.test/gmail/mcp'
+SERVICE_BASE = 'https://mcp.example.test/gmail'
 PATH_SLASHED = 'https://mcp.example.test/gmail/mcp/'
 PATH_DOUBLE_SLASH = 'https://mcp.example.test/gmail/mcp//'
 ROOT_RESOURCE = 'https://mcp.example.test'
@@ -60,7 +62,7 @@ def service_config(tmp_path: Path) -> ServiceConfig:
     state_dir.mkdir(mode=0o700, parents=True)
     return ServiceConfig(
         service_id='gmail',
-        public_url=PATH_RESOURCE,
+        public_url=ISSUER,
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,
@@ -91,7 +93,7 @@ def oauth_state(
         service_config.oauth_state_path,
         download_path=downloads,
         service_id=service_config.service_id,
-        resource=service_config.public_url,
+        resource=service_config.resource_url,
         readonly_capabilities=READONLY,
         legacy_path=service_config.legacy_clients_path,
         approved_legacy_client_ids=service_config.approved_legacy_client_ids,
@@ -131,7 +133,7 @@ def endpoint(endpoints: OAuthEndpoints) -> TestClient:
 
 
 def _register(
-    endpoint: TestClient, oauth_path: str = '/gmail/mcp/oauth'
+    endpoint: TestClient, oauth_path: str = '/gmail/oauth'
 ) -> tuple[str, str]:
     """Register dynamic test client."""
     response = endpoint.post(
@@ -146,7 +148,7 @@ def _authorize(
     endpoint: TestClient,
     client_id: str,
     resource: str,
-    oauth_path: str = '/gmail/mcp/oauth',
+    oauth_path: str = '/gmail/oauth',
 ) -> str:
     """Execute authorization code flow."""
     response = endpoint.post(
@@ -173,7 +175,7 @@ def _exchange(
     client_secret: str,
     code: str,
     resource: str,
-    oauth_path: str = '/gmail/mcp/oauth',
+    oauth_path: str = '/gmail/oauth',
 ) -> dict:
     """Execute code exchange request."""
     response = endpoint.post(
@@ -197,7 +199,7 @@ def _refresh(
     client_id: str,
     refresh_token: str,
     resource: str,
-    oauth_path: str = '/gmail/mcp/oauth',
+    oauth_path: str = '/gmail/oauth',
 ):
     """Execute refresh rotation request."""
     return endpoint.post(
@@ -227,10 +229,13 @@ def test_path_resource_passes_full_flow(endpoint: TestClient) -> None:
 @pytest.mark.parametrize(
     'bad_resource',
     [
+        SERVICE_BASE,
         PATH_SLASHED,
         PATH_DOUBLE_SLASH,
         PATH_RESOURCE + '/extra',
         'https://mcp.example.test/drive/mcp',
+        'https://MCP.example.test/gmail/mcp',
+        'https://mcp.example.test/gmail%2Fmcp',
         ROOT_RESOURCE,
         ROOT_SLASHED,
     ],
@@ -241,7 +246,7 @@ def test_path_resource_variations_stay_rejected_everywhere(
 ) -> None:
     client_id, client_secret = _register(endpoint)
     denied_auth = endpoint.post(
-        '/gmail/mcp/oauth/authorize',
+        '/gmail/oauth/authorize',
         data={
             'response_type': 'code',
             'client_id': client_id,
@@ -259,7 +264,7 @@ def test_path_resource_variations_stay_rejected_everywhere(
 
     code = _authorize(endpoint, client_id, PATH_RESOURCE)
     exchange = endpoint.post(
-        '/gmail/mcp/oauth/token',
+        '/gmail/oauth/token',
         data={
             'grant_type': 'authorization_code',
             'code': code,
@@ -282,142 +287,70 @@ def test_path_resource_variations_stay_rejected_everywhere(
     assert rotated.json()['error'] == 'invalid_target'
 
 
-# Root authority equivalence tests
-
-
-@pytest.mark.parametrize('form', [ROOT_RESOURCE, ROOT_SLASHED])
-def test_both_root_forms_pass_the_full_flow(
-    tmp_path: Path,
-    form: str,
+def test_duplicate_resource_parameter_rejected_everywhere(
+    endpoint: TestClient,
 ) -> None:
-    # 1. Build root config
-    state_dir = tmp_path / 'root-state'
-    state_dir.mkdir(mode=0o700, parents=True)
-    root_config = ServiceConfig(
-        service_id='gmail',
-        public_url=ROOT_RESOURCE,
-        mcp_path='/gmail/mcp',
-        host='127.0.0.1',
-        port=8431,
-        download_path=tmp_path / 'root-downloads',
-        oauth_state_path=state_dir / 'oauth_state.sqlite3',
-        google_token_path=state_dir / 'google.json',
-        audit_log_path=state_dir / 'audit.jsonl',
-        oauth_login_username=LOGIN_USERNAME,
-        oauth_login_password=LOGIN_PASSWORD,
-        allowed_hosts=('mcp.example.test',),
-        forwarded_allow_ips=('127.0.0.1',),
-        legacy_clients_path=tmp_path / 'root-legacy.json',
-        approved_legacy_client_ids=frozenset(),
-        access_token_ttl_seconds=3600,
-        refresh_token_ttl_seconds=86400,
+    client_id, client_secret = _register(endpoint)
+    denied_auth = endpoint.post(
+        '/gmail/oauth/authorize',
+        data={
+            'response_type': 'code',
+            'client_id': client_id,
+            'redirect_uri': REDIRECT,
+            'code_challenge': CHALLENGE,
+            'code_challenge_method': 'S256',
+            'resource': [PATH_RESOURCE, PATH_RESOURCE],
+            'username': LOGIN_USERNAME,
+            'password': LOGIN_PASSWORD,
+        },
+        follow_redirects=False,
     )
-    downloads = tmp_path / 'root-downloads'
-    downloads.mkdir(mode=0o700)
-    # 2. Open root state
-    with OAuthState(
-        root_config.oauth_state_path,
-        download_path=downloads,
-        service_id=root_config.service_id,
-        resource=root_config.public_url,
-        readonly_capabilities=READONLY,
-        access_token_ttl_seconds=root_config.access_token_ttl_seconds,
-        refresh_token_ttl_seconds=root_config.refresh_token_ttl_seconds,
-    ) as state:
-        state.migrate_legacy()
-        endpoints = OAuthEndpoints(
-            config=root_config,
-            oauth_state=state,
-            login_username=LOGIN_USERNAME,
-            login_password=LOGIN_PASSWORD,
-            audit_writer=lambda _: None,
-        )
-        # 3. Complete root flow
-        client = TestClient(Starlette(routes=endpoints.routes))
-        client_id, client_secret = _register(client, '/oauth')
-        code = _authorize(client, client_id, form, '/oauth')
-        issued = _exchange(
-            client, client_id, client_secret, code, form, '/oauth'
-        )
-        rotated = _refresh(
-            client, client_id, issued['refresh_token'], form, '/oauth'
-        )
-        assert rotated.status_code == 200, rotated.text
+    assert denied_auth.status_code == 400
+    assert denied_auth.json()['error'] == 'invalid_request'
 
-
-def test_mixed_root_forms_between_issuance_and_rotation(
-    tmp_path: Path,
-) -> None:
-    # 1. Build mixed config
-    state_dir = tmp_path / 'mixed-state'
-    state_dir.mkdir(mode=0o700, parents=True)
-    root_config = ServiceConfig(
-        service_id='gmail',
-        public_url=ROOT_RESOURCE,
-        mcp_path='/gmail/mcp',
-        host='127.0.0.1',
-        port=8431,
-        download_path=tmp_path / 'mixed-downloads',
-        oauth_state_path=state_dir / 'oauth_state.sqlite3',
-        google_token_path=state_dir / 'google.json',
-        audit_log_path=state_dir / 'audit.jsonl',
-        oauth_login_username=LOGIN_USERNAME,
-        oauth_login_password=LOGIN_PASSWORD,
-        allowed_hosts=('mcp.example.test',),
-        forwarded_allow_ips=('127.0.0.1',),
-        legacy_clients_path=tmp_path / 'mixed-legacy.json',
-        approved_legacy_client_ids=frozenset(),
-        access_token_ttl_seconds=3600,
-        refresh_token_ttl_seconds=86400,
+    denied_get = endpoint.get(
+        '/gmail/oauth/authorize',
+        params={
+            'response_type': 'code',
+            'client_id': client_id,
+            'redirect_uri': REDIRECT,
+            'code_challenge': CHALLENGE,
+            'code_challenge_method': 'S256',
+            'resource': [PATH_RESOURCE, PATH_RESOURCE],
+        },
     )
-    downloads = tmp_path / 'mixed-downloads'
-    downloads.mkdir(mode=0o700)
-    # 2. Open mixed state
-    with OAuthState(
-        root_config.oauth_state_path,
-        download_path=downloads,
-        service_id=root_config.service_id,
-        resource=root_config.public_url,
-        readonly_capabilities=READONLY,
-        access_token_ttl_seconds=root_config.access_token_ttl_seconds,
-        refresh_token_ttl_seconds=root_config.refresh_token_ttl_seconds,
-    ) as state:
-        state.migrate_legacy()
-        endpoints = OAuthEndpoints(
-            config=root_config,
-            oauth_state=state,
-            login_username=LOGIN_USERNAME,
-            login_password=LOGIN_PASSWORD,
-            audit_writer=lambda _: None,
-        )
-        # 3. Rotate root forms
-        client = TestClient(Starlette(routes=endpoints.routes))
-        client_id, client_secret = _register(client, '/oauth')
-        code = _authorize(client, client_id, ROOT_RESOURCE, '/oauth')
-        issued = _exchange(
-            client,
-            client_id,
-            client_secret,
-            code,
-            ROOT_SLASHED,
-            '/oauth',
-        )
-        first = _refresh(
-            client,
-            client_id,
-            issued['refresh_token'],
-            ROOT_RESOURCE,
-            '/oauth',
-        )
-        assert first.status_code == 200, first.text
-        second = _refresh(
-            client,
-            client_id,
-            first.json()['refresh_token'],
-            ROOT_SLASHED,
-            '/oauth',
-        )
-        assert second.status_code == 200, second.text
+    assert denied_get.status_code == 400
+    assert denied_get.json()['error'] == 'invalid_request'
+
+    code = _authorize(endpoint, client_id, PATH_RESOURCE)
+    exchange = endpoint.post(
+        '/gmail/oauth/token',
+        data={
+            'grant_type': 'authorization_code',
+            'code': code,
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'redirect_uri': REDIRECT,
+            'code_verifier': VERIFIER,
+            'resource': [PATH_RESOURCE, PATH_RESOURCE],
+        },
+    )
+    assert exchange.status_code == 400
+    assert exchange.json()['error'] == 'invalid_request'
+
+    code = _authorize(endpoint, client_id, PATH_RESOURCE)
+    issued = _exchange(endpoint, client_id, client_secret, code, PATH_RESOURCE)
+    rotated = endpoint.post(
+        '/gmail/oauth/token',
+        data={
+            'grant_type': 'refresh_token',
+            'refresh_token': issued['refresh_token'],
+            'client_id': client_id,
+            'resource': [PATH_RESOURCE, PATH_RESOURCE],
+        },
+    )
+    assert rotated.status_code == 400
+    assert rotated.json()['error'] == 'invalid_request'
 
 
 # State level resource binding tests

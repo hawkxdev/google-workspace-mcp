@@ -53,7 +53,7 @@ def _setup_service_env(
     dl.mkdir(parents=True, mode=0o700)
     for k, v in {
         f'{service}_MCP_PORT': port,
-        f'{service}_MCP_PUBLIC_URL': f'https://127.0.0.1:{port}',
+        f'{service}_MCP_PUBLIC_URL': f'https://mcp.example.test/{service.lower()}',
         f'{service}_OAUTH_STATE_PATH': str(d / 'oauth.db'),
         f'{service}_GOOGLE_TOKEN_PATH': str(d / 'token.json'),
         f'{service}_AUDIT_LOG_PATH': str(d / 'audit.jsonl'),
@@ -117,11 +117,11 @@ def test_all_five_factories_maintain_isolation(
 
         state_resources = [st.resource for st in all_states]
         assert state_resources == [
-            'https://127.0.0.1:8431',
-            'https://127.0.0.1:8432',
-            'https://127.0.0.1:8433',
-            'https://127.0.0.1:8434',
-            'https://127.0.0.1:8435',
+            'https://mcp.example.test/gmail/mcp',
+            'https://mcp.example.test/calendar/mcp',
+            'https://mcp.example.test/drive/mcp',
+            'https://mcp.example.test/sheets/mcp',
+            'https://mcp.example.test/docs/mcp',
         ]
 
         for (srv_name, _), app in zip(services_spec, all_apps, strict=True):
@@ -156,7 +156,7 @@ def test_create_service_app_with_extensions(tmp_path: Path) -> None:
 
     config = ServiceConfig(
         service_id='gmail',
-        public_url='https://127.0.0.1:8431',
+        public_url='https://mcp.example.test/gmail',
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,
@@ -224,7 +224,7 @@ def test_create_service_app_with_extensions(tmp_path: Path) -> None:
             client_id='full-client',
             policy=LEGACY_FULL,
             capabilities=(),
-            resource='https://127.0.0.1:8431',
+            resource='https://mcp.example.test/gmail/mcp',
             issued_at=1.0,
             expires_at=9999999999.0,
             revoked_at=None,
@@ -259,8 +259,8 @@ def test_factory_with_explicit_config_override(tmp_path: Path) -> None:
 
     config = ServiceConfig(
         service_id='gmail',
-        public_url='https://custom.example.com',
-        mcp_path='/custom/mcp',
+        public_url='https://custom.example.com/gmail',
+        mcp_path='/gmail/mcp',
         host='127.0.0.2',
         port=9999,
         download_path=dl_dir,
@@ -280,7 +280,7 @@ def test_factory_with_explicit_config_override(tmp_path: Path) -> None:
     app, server, state = create_gmail_app(config=config)
     try:
         assert server.name == 'gmail'
-        assert state.resource == 'https://custom.example.com'
+        assert state.resource == 'https://custom.example.com/gmail/mcp'
         assert state.service_id == 'gmail'
     finally:
         state.close()
@@ -294,7 +294,7 @@ def test_factory_app_lifespan_closes_oauth_state(tmp_path: Path) -> None:
 
     config = ServiceConfig(
         service_id='gmail',
-        public_url='https://127.0.0.1:8431',
+        public_url='https://mcp.example.test/gmail',
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,
@@ -342,7 +342,7 @@ def test_factory_closes_state_on_tool_registration_failure(
 
     config = ServiceConfig(
         service_id='gmail',
-        public_url='https://127.0.0.1:8431',
+        public_url='https://mcp.example.test/gmail',
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,
@@ -391,7 +391,7 @@ def test_factory_closes_state_on_build_app_failure(
 
     config = ServiceConfig(
         service_id='gmail',
-        public_url='https://127.0.0.1:8431',
+        public_url='https://mcp.example.test/gmail',
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,
@@ -434,3 +434,36 @@ def test_factory_closes_state_on_build_app_failure(
     assert failed_state._closed is True
     with pytest.raises(sqlite3.ProgrammingError):
         failed_state.table_names()
+
+
+def test_factory_owns_exact_endpoint_resource(tmp_path: Path) -> None:
+    srv_dir = tmp_path / 'exact_srv'
+    srv_dir.mkdir(parents=True, mode=0o700)
+    dl_dir = srv_dir / 'dl'
+    dl_dir.mkdir(parents=True, mode=0o700)
+
+    config = ServiceConfig(
+        service_id='gmail',
+        public_url='https://mcp.example.test/gmail',
+        mcp_path='/gmail/mcp',
+        host='127.0.0.1',
+        port=8431,
+        download_path=dl_dir,
+        oauth_state_path=srv_dir / 'oauth.db',
+        google_token_path=srv_dir / 'token.json',
+        audit_log_path=srv_dir / 'audit.jsonl',
+        oauth_login_username='admin',
+        oauth_login_password='secret-password',
+        allowed_hosts=(),
+        forwarded_allow_ips=('127.0.0.1',),
+        legacy_clients_path=None,
+        approved_legacy_client_ids=frozenset(),
+        access_token_ttl_seconds=86400,
+        refresh_token_ttl_seconds=2592000,
+    )
+    _, _, state = create_service_app(config)
+    try:
+        assert state.resource == config.resource_url
+        assert state.resource != config.public_url
+    finally:
+        state.close()

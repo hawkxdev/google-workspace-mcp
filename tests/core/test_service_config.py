@@ -35,6 +35,49 @@ CONFIG_ENV_SUFFIXES = (
     'OAUTH_ACCESS_TOKEN_TTL_SECONDS',
     'OAUTH_REFRESH_TOKEN_TTL_SECONDS',
 )
+DEFAULT_USER = 'admin'
+DEFAULT_PASS = 'super-secret'
+
+
+def service_config(
+    service_id: str = 'gmail',
+    public_url: str = 'https://mcp.example.test/gmail',
+    mcp_path: str = '/gmail/mcp',
+    host: str = '127.0.0.1',
+    port: int = 8431,
+    download_path: Path = Path('downloads'),
+    oauth_state_path: Path = Path('oauth.sqlite3'),
+    google_token_path: Path = Path('token.json'),
+    audit_log_path: Path = Path('audit.jsonl'),
+    oauth_login_username: str = DEFAULT_USER,
+    oauth_login_password: str = DEFAULT_PASS,
+    allowed_hosts: tuple[str, ...] = (),
+    forwarded_allow_ips: tuple[str, ...] = ('127.0.0.1',),
+    legacy_clients_path: Path | None = None,
+    approved_legacy_client_ids: frozenset[str] = frozenset(),
+    access_token_ttl_seconds: int = 86400,
+    refresh_token_ttl_seconds: int = 2592000,
+) -> ServiceConfig:
+    """Build service configuration."""
+    return ServiceConfig(
+        service_id=service_id,
+        public_url=public_url,
+        mcp_path=mcp_path,
+        host=host,
+        port=port,
+        download_path=download_path,
+        oauth_state_path=oauth_state_path,
+        google_token_path=google_token_path,
+        audit_log_path=audit_log_path,
+        oauth_login_username=oauth_login_username,
+        oauth_login_password=oauth_login_password,
+        allowed_hosts=allowed_hosts,
+        forwarded_allow_ips=forwarded_allow_ips,
+        legacy_clients_path=legacy_clients_path,
+        approved_legacy_client_ids=approved_legacy_client_ids,
+        access_token_ttl_seconds=access_token_ttl_seconds,
+        refresh_token_ttl_seconds=refresh_token_ttl_seconds,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -51,7 +94,7 @@ def clear_service_config_environment(
         )
         monkeypatch.setenv(
             f'{service.upper()}_MCP_PUBLIC_URL',
-            f'https://mcp.example.test/{service}/mcp',
+            f'https://mcp.example.test/{service}',
         )
 
 
@@ -59,12 +102,45 @@ def clear_service_config_environment(
 class TestValidConfiguration:
     """Valid configuration cases."""
 
+    @pytest.mark.parametrize(
+        ('service', 'issuer', 'mcp_path', 'resource'),
+        [
+            (
+                'gmail',
+                'https://mcp.example.test/gmail',
+                '/gmail/mcp',
+                'https://mcp.example.test/gmail/mcp',
+            ),
+            (
+                'docs',
+                'https://mcp.example.test/docs',
+                '/docs/mcp',
+                'https://mcp.example.test/docs/mcp',
+            ),
+        ],
+    )
+    def test_resource_url_is_exact_mcp_endpoint(
+        self,
+        service: str,
+        issuer: str,
+        mcp_path: str,
+        resource: str,
+    ) -> None:
+        config = service_config(
+            service_id=service,
+            public_url=issuer,
+            mcp_path=mcp_path,
+        )
+
+        assert config.resource_url == resource
+
     def test_defaults_are_exact(self) -> None:
         config = ServiceConfig.from_env('gmail')
         state_dir = Path.home() / '.local/share/google-workspace-mcp/gmail'
 
         assert config.service_id == 'gmail'
-        assert config.public_url == 'https://mcp.example.test/gmail/mcp'
+        assert config.public_url == 'https://mcp.example.test/gmail'
+        assert config.resource_url == 'https://mcp.example.test/gmail/mcp'
         assert config.mcp_path == '/gmail/mcp'
         assert config.host == '127.0.0.1'
         assert config.port == 8431
@@ -89,15 +165,16 @@ class TestValidConfiguration:
         config = ServiceConfig.from_env(service)
         assert config.service_id == service
         assert config.port == port
-        assert config.public_url == f'https://mcp.example.test/{service}/mcp'
+        assert config.public_url == f'https://mcp.example.test/{service}'
+        assert config.resource_url == f'https://mcp.example.test/{service}/mcp'
         assert config.mcp_path == f'/{service}/mcp'
 
     def test_all_environment_fields_override_defaults(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         values = {
-            'GMAIL_MCP_PUBLIC_URL': 'https://mail.example.test',
-            'GMAIL_MCP_PATH': '/custom/mcp',
+            'GMAIL_MCP_PUBLIC_URL': 'https://mail.example.test/gmail',
+            'GMAIL_MCP_PATH': '/gmail/mcp',
             'GMAIL_MCP_HOST': '127.0.0.2',
             'GMAIL_MCP_PORT': '9001',
             'GMAIL_MCP_DOWNLOAD_PATH': '/var/lib/mail/downloads',
@@ -121,8 +198,9 @@ class TestValidConfiguration:
         config = ServiceConfig.from_env('gmail')
 
         assert config.service_id == 'gmail'
-        assert config.public_url == 'https://mail.example.test'
-        assert config.mcp_path == '/custom/mcp'
+        assert config.public_url == 'https://mail.example.test/gmail'
+        assert config.resource_url == 'https://mail.example.test/gmail/mcp'
+        assert config.mcp_path == '/gmail/mcp'
         assert config.host == '127.0.0.2'
         assert config.port == 9001
         assert config.download_path == Path('/var/lib/mail/downloads')
@@ -167,14 +245,6 @@ class TestValidConfiguration:
         monkeypatch.setenv('GMAIL_MCP_FORWARDED_ALLOW_IPS', '')
 
         assert ServiceConfig.from_env('gmail').forwarded_allow_ips == ()
-
-    def test_path_resource_trailing_slash_is_preserved(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        resource = 'https://mcp.example.test/gmail/mcp/'
-        monkeypatch.setenv('GMAIL_MCP_PUBLIC_URL', resource)
-
-        assert ServiceConfig.from_env('gmail').public_url == resource
 
     def test_service_paths_are_distinct_per_service(self) -> None:
         configs = [
@@ -271,6 +341,37 @@ class TestInvalidConfiguration:
         monkeypatch.setenv(f'DOCS_{variable}', '')
         with pytest.raises(ValueError, match=f'DOCS_{variable}'):
             ServiceConfig.from_env('docs')
+
+    @pytest.mark.parametrize(
+        ('issuer', 'mcp_path'),
+        [
+            ('http://mcp.example.test/gmail', '/gmail/mcp'),
+            ('https://user@mcp.example.test/gmail', '/gmail/mcp'),
+            ('https://mcp.example.test:443/gmail', '/gmail/mcp'),
+            ('https://mcp.example.test:/gmail', '/gmail/mcp'),
+            ('https://MCP.example.test/gmail', '/gmail/mcp'),
+            ('https://mcp.example.test/gmail%2Fadmin', '/gmail/mcp'),
+            ('https://mcp\\.example.test/gmail', '/gmail/mcp'),
+            ('https://[::1]/gmail', '/gmail/mcp'),
+            ('https://mcp.example.test/gmail/', '/gmail/mcp'),
+            ('https://mcp.example.test/gmail?x=1', '/gmail/mcp'),
+            ('https://mcp.example.test/gmail#x', '/gmail/mcp'),
+            ('https://mcp.example.test/gm ail', '/gmail/mcp'),
+            ('https://mcp.example.test/gmail\t', '/gmail/mcp'),
+            ('https://mcp.example.test/gmail\n', '/gmail/mcp'),
+            (' https://mcp.example.test/gmail', '/gmail/mcp'),
+            ('https://mcp.example.test/drive', '/gmail/mcp'),
+            ('https://mcp.example.test/gmail', '/drive/mcp'),
+            ('https://mcp.example.test/gmail', '/gmail/mcp/'),
+        ],
+    )
+    def test_service_identity_rejects_ambiguous_urls(
+        self,
+        issuer: str,
+        mcp_path: str,
+    ) -> None:
+        with pytest.raises(ValueError, match='service identity'):
+            service_config(public_url=issuer, mcp_path=mcp_path).resource_url
 
 
 # Configuration boundary cases

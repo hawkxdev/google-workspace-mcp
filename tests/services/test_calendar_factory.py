@@ -22,7 +22,7 @@ def _config(tmp_path: Path) -> ServiceConfig:
     downloads.mkdir(mode=0o700)
     return ServiceConfig(
         service_id='calendar',
-        public_url='https://127.0.0.1:8432',
+        public_url='https://mcp.example.test/calendar',
         mcp_path='/calendar/mcp',
         host='127.0.0.1',
         port=8432,

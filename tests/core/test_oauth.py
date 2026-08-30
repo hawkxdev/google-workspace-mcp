@@ -8,7 +8,6 @@ import json
 import sqlite3
 import urllib.parse
 from collections.abc import Iterator
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -29,10 +28,10 @@ from google_workspace_mcp.common.config import ServiceConfig
 
 LOGIN_USERNAME = 'test-user'
 LOGIN_PASSWORD = 'test-password'
+ISSUER = 'https://mcp.example.test/gmail'
 RESOURCE = 'https://mcp.example.test/gmail/mcp'
 REDIRECT_URI = 'https://client.example.test/callback'
 READONLY_CAPABILITIES = ('gmail_get_message', 'gmail_search')
-
 
 # Shared test fixtures
 
@@ -50,7 +49,7 @@ def service_config(tmp_path: Path) -> ServiceConfig:
     state_dir.mkdir(mode=0o700, parents=True)
     return ServiceConfig(
         service_id='gmail',
-        public_url=RESOURCE,
+        public_url=ISSUER,
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,
@@ -81,7 +80,7 @@ def oauth_state(
         service_config.oauth_state_path,
         download_path=downloads,
         service_id=service_config.service_id,
-        resource=service_config.public_url,
+        resource=service_config.resource_url,
         readonly_capabilities=READONLY_CAPABILITIES,
         legacy_path=service_config.legacy_clients_path,
         approved_legacy_client_ids=service_config.approved_legacy_client_ids,
@@ -134,7 +133,7 @@ def _register(
 ) -> tuple[str, str, str]:
     """Register dynamic test client."""
     response = client.post(
-        '/gmail/mcp/oauth/register',
+        '/gmail/oauth/register',
         json={
             'client_name': 'Test Client',
             'redirect_uris': [redirect_uri],
@@ -190,7 +189,7 @@ def _authorize(
     """Execute interactive authorization flow."""
     params = _authz_params(client_id, redirect_uri)
     response = client.post(
-        '/gmail/mcp/oauth/authorize',
+        '/gmail/oauth/authorize',
         data={
             **params,
             'username': LOGIN_USERNAME,
@@ -203,7 +202,7 @@ def _authorize(
         urllib.parse.urlsplit(response.headers['location']).query
     )
     assert query['state'] == ['xyz']
-    assert query['iss'] == [RESOURCE]
+    assert query['iss'] == [ISSUER]
     return query['code'][0]
 
 
@@ -221,7 +220,7 @@ def _exchange(
     if verifier is None:
         verifier, _ = _pkce()
     return client.post(
-        '/gmail/mcp/oauth/token',
+        '/gmail/oauth/token',
         data={
             'grant_type': 'authorization_code',
             'code': code,
@@ -238,16 +237,16 @@ def _exchange(
 
 
 def test_oauth_metadata_advertises_confidential_code_flow(client):
-    response = client.get('/.well-known/oauth-authorization-server/gmail/mcp')
+    response = client.get('/.well-known/oauth-authorization-server/gmail')
 
     assert response.status_code == 200
     body = response.json()
-    assert body['issuer'] == RESOURCE
+    assert body['issuer'] == ISSUER
     assert body['authorization_response_iss_parameter_supported'] is True
     assert body['resource'] == RESOURCE
-    assert body['authorization_endpoint'] == f'{RESOURCE}/oauth/authorize'
-    assert body['token_endpoint'] == f'{RESOURCE}/oauth/token'
-    assert body['registration_endpoint'] == f'{RESOURCE}/oauth/register'
+    assert body['authorization_endpoint'] == f'{ISSUER}/oauth/authorize'
+    assert body['token_endpoint'] == f'{ISSUER}/oauth/token'
+    assert body['registration_endpoint'] == f'{ISSUER}/oauth/register'
     assert body['response_types_supported'] == ['code']
     assert body['code_challenge_methods_supported'] == ['S256']
     assert body['token_endpoint_auth_methods_supported'] == [
@@ -265,50 +264,27 @@ def test_protected_resource_metadata_uses_canonical_resource(client):
     assert response.status_code == 200
     assert response.json() == {
         'resource': RESOURCE,
-        'authorization_servers': [RESOURCE],
+        'authorization_servers': [ISSUER],
         'bearer_methods_supported': ['header'],
     }
 
 
-def test_encoded_metadata_paths_reach_endpoint_handlers(
-    service_config: ServiceConfig, tmp_path: Path
-):
-    encoded_resource = 'https://mcp.example.test/gmail%2Fmcp'
-    encoded_config = replace(
-        service_config,
-        public_url=encoded_resource,
-        oauth_state_path=tmp_path / 'encoded' / 'oauth.sqlite3',
-    )
-    state = OAuthState(
-        encoded_config.oauth_state_path,
-        download_path=tmp_path / 'encoded-downloads',
-        service_id=encoded_config.service_id,
-        resource=encoded_config.public_url,
-        readonly_capabilities=READONLY_CAPABILITIES,
-    )
-    try:
-        endpoints = OAuthEndpoints(
-            config=encoded_config,
-            oauth_state=state,
-            login_username=LOGIN_USERNAME,
-            login_password=LOGIN_PASSWORD,
-            audit_writer=lambda _: None,
-        )
-        encoded_client = TestClient(Starlette(routes=endpoints.routes))
+def test_metadata_separates_issuer_and_resource(client: TestClient) -> None:
+    protected = client.get('/.well-known/oauth-protected-resource/gmail/mcp')
+    server = client.get('/.well-known/oauth-authorization-server/gmail')
 
-        protected = encoded_client.get(
-            '/.well-known/oauth-protected-resource/gmail%2Fmcp'
-        )
-        server = encoded_client.get(
-            '/.well-known/oauth-authorization-server/gmail%2Fmcp'
-        )
-
-        assert protected.status_code == 200
-        assert protected.json()['resource'] == encoded_resource
-        assert server.status_code == 200
-        assert server.json()['issuer'] == encoded_resource
-    finally:
-        state.close()
+    assert protected.status_code == 200
+    assert protected.json() == {
+        'resource': 'https://mcp.example.test/gmail/mcp',
+        'authorization_servers': ['https://mcp.example.test/gmail'],
+        'bearer_methods_supported': ['header'],
+    }
+    assert server.status_code == 200
+    assert server.json()['issuer'] == 'https://mcp.example.test/gmail'
+    assert server.json()['resource'] == ('https://mcp.example.test/gmail/mcp')
+    assert server.json()['authorization_endpoint'] == (
+        'https://mcp.example.test/gmail/oauth/authorize'
+    )
 
 
 def test_protected_resource_metadata_url_inserts_well_known_before_path():
@@ -325,9 +301,8 @@ def test_protected_resource_metadata_url_inserts_well_known_before_path():
 
 
 def test_authorization_server_metadata_url_inserts_well_known_before_path():
-    assert authorization_server_metadata_url(RESOURCE) == (
-        'https://mcp.example.test'
-        '/.well-known/oauth-authorization-server/gmail/mcp'
+    assert authorization_server_metadata_url(ISSUER) == (
+        'https://mcp.example.test/.well-known/oauth-authorization-server/gmail'
     )
     assert authorization_server_metadata_url('https://mcp.example.test') == (
         'https://mcp.example.test/.well-known/oauth-authorization-server'
@@ -335,9 +310,8 @@ def test_authorization_server_metadata_url_inserts_well_known_before_path():
     assert authorization_server_metadata_url('https://mcp.example.test/') == (
         'https://mcp.example.test/.well-known/oauth-authorization-server'
     )
-    assert authorization_server_metadata_url(f'{RESOURCE}/') == (
-        'https://mcp.example.test'
-        '/.well-known/oauth-authorization-server/gmail/mcp'
+    assert authorization_server_metadata_url(f'{ISSUER}/') == (
+        'https://mcp.example.test/.well-known/oauth-authorization-server/gmail'
     )
 
 
@@ -403,7 +377,7 @@ def test_registration_rejects_empty_or_invalid_redirect_metadata(
     clients_before = oauth_state.list_clients()
 
     response = client.post(
-        '/gmail/mcp/oauth/register',
+        '/gmail/oauth/register',
         json={'redirect_uris': redirect_uris},
     )
 
@@ -496,7 +470,7 @@ def test_authorization_code_survives_state_reopen(
         service_config.oauth_state_path,
         download_path=tmp_path / 'downloads',
         service_id=service_config.service_id,
-        resource=service_config.public_url,
+        resource=service_config.resource_url,
         readonly_capabilities=READONLY_CAPABILITIES,
         legacy_path=service_config.legacy_clients_path,
         approved_legacy_client_ids=service_config.approved_legacy_client_ids,
@@ -592,9 +566,9 @@ def test_authorize_requires_interactive_login(client):
     client_id, _, redirect_uri = _register(client)
     params = _authz_params(client_id, redirect_uri)
 
-    get_response = client.get('/gmail/mcp/oauth/authorize', params=params)
+    get_response = client.get('/gmail/oauth/authorize', params=params)
     wrong_response = client.post(
-        '/gmail/mcp/oauth/authorize',
+        '/gmail/oauth/authorize',
         data={**params, 'username': LOGIN_USERNAME, 'password': 'wrong'},
         follow_redirects=False,
     )
@@ -614,7 +588,7 @@ def test_authorize_rejects_wrong_unicode_credentials_without_server_error(
         client.app, raise_server_exceptions=False
     ) as tolerant_client:
         response = tolerant_client.post(
-            '/gmail/mcp/oauth/authorize',
+            '/gmail/oauth/authorize',
             data={**params, 'username': 'пользователь', 'password': 'пароль'},
             follow_redirects=False,
         )
@@ -630,7 +604,7 @@ def test_consent_form_identifies_client_and_redirect_without_rendering_markup(
         'https://client.example.test/callback?next=<unsafe>&mode=consent'
     )
     registration = client.post(
-        '/gmail/mcp/oauth/register',
+        '/gmail/oauth/register',
         json={
             'client_name': '<img src=x onerror=alert(1)>',
             'redirect_uris': [redirect_uri],
@@ -639,7 +613,7 @@ def test_consent_form_identifies_client_and_redirect_without_rendering_markup(
     assert registration.status_code == 201
 
     response = client.get(
-        '/gmail/mcp/oauth/authorize',
+        '/gmail/oauth/authorize',
         params=_authz_params(registration.json()['client_id'], redirect_uri),
     )
 
@@ -674,10 +648,10 @@ def test_missing_login_configuration_fails_closed(
     params = _authz_params(client_id, redirect_uri)
 
     get_response = misconfigured_client.get(
-        '/gmail/mcp/oauth/authorize', params=params, follow_redirects=False
+        '/gmail/oauth/authorize', params=params, follow_redirects=False
     )
     post_response = misconfigured_client.post(
-        '/gmail/mcp/oauth/authorize',
+        '/gmail/oauth/authorize',
         data={**params, 'username': LOGIN_USERNAME, 'password': 'anything'},
         follow_redirects=False,
     )
@@ -703,7 +677,7 @@ def test_pending_import_requires_fresh_login_then_issues_exact_readonly_token(
     state_path.parent.mkdir(mode=0o700, parents=True)
     config = ServiceConfig(
         service_id='gmail',
-        public_url=RESOURCE,
+        public_url=ISSUER,
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,
@@ -727,7 +701,7 @@ def test_pending_import_requires_fresh_login_then_issues_exact_readonly_token(
         config.oauth_state_path,
         download_path=downloads,
         service_id=config.service_id,
-        resource=config.public_url,
+        resource=config.resource_url,
         readonly_capabilities=READONLY_CAPABILITIES,
         legacy_path=config.legacy_clients_path,
         approved_legacy_client_ids=config.approved_legacy_client_ids,
@@ -747,7 +721,7 @@ def test_pending_import_requires_fresh_login_then_issues_exact_readonly_token(
 
         # 3. Reject stale login
         denied = test_client.post(
-            '/gmail/mcp/oauth/authorize',
+            '/gmail/oauth/authorize',
             data={**params, 'username': LOGIN_USERNAME, 'password': 'wrong'},
             follow_redirects=False,
         )
@@ -785,7 +759,7 @@ def test_reauthorization_rolls_back_if_code_insert_fails(
     state_path.parent.mkdir(mode=0o700, parents=True)
     config = ServiceConfig(
         service_id='gmail',
-        public_url=RESOURCE,
+        public_url=ISSUER,
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,
@@ -809,7 +783,7 @@ def test_reauthorization_rolls_back_if_code_insert_fails(
         config.oauth_state_path,
         download_path=downloads,
         service_id=config.service_id,
-        resource=config.public_url,
+        resource=config.resource_url,
         readonly_capabilities=READONLY_CAPABILITIES,
         legacy_path=config.legacy_clients_path,
         approved_legacy_client_ids=config.approved_legacy_client_ids,
@@ -837,7 +811,7 @@ def test_reauthorization_rolls_back_if_code_insert_fails(
             sqlite3.IntegrityError, match='synthetic code insert failure'
         ):
             test_client.post(
-                '/gmail/mcp/oauth/authorize',
+                '/gmail/oauth/authorize',
                 data={
                     **_authz_params(client_id, redirect_uri),
                     'username': LOGIN_USERNAME,
@@ -869,7 +843,7 @@ def test_authorization_request_validation(client, changes, error):
     params = _authz_params(client_id, redirect_uri)
     params.update(changes)
 
-    response = client.get('/gmail/mcp/oauth/authorize', params=params)
+    response = client.get('/gmail/oauth/authorize', params=params)
 
     assert response.status_code == 400
     assert response.json()['error'] == error

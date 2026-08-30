@@ -16,7 +16,9 @@ from google_workspace_mcp.auth.bearer import BearerAuthMiddleware
 from google_workspace_mcp.auth.state import OAuthState
 from google_workspace_mcp.common.config import ServiceConfig
 
+GMAIL_ISSUER = 'https://mcp.example.test/gmail'
 GMAIL_RESOURCE = 'https://mcp.example.test/gmail/mcp'
+DRIVE_ISSUER = 'https://mcp.example.test/drive'
 DRIVE_RESOURCE = 'https://mcp.example.test/drive/mcp'
 SERVICES = ('gmail', 'calendar', 'drive', 'sheets', 'docs')
 READONLY_CAPABILITIES = ('gmail.read',)
@@ -30,7 +32,7 @@ def service_config(state_dir: Path) -> ServiceConfig:
     download_path.mkdir()
     return ServiceConfig(
         service_id='gmail',
-        public_url=GMAIL_RESOURCE,
+        public_url=GMAIL_ISSUER,
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,
@@ -56,7 +58,7 @@ def oauth_state(service_config: ServiceConfig) -> Iterator[OAuthState]:
         service_config.oauth_state_path,
         download_path=service_config.download_path,
         service_id=service_config.service_id,
-        resource=service_config.public_url,
+        resource=service_config.resource_url,
         readonly_capabilities=READONLY_CAPABILITIES,
         access_token_ttl_seconds=service_config.access_token_ttl_seconds,
         refresh_token_ttl_seconds=service_config.refresh_token_ttl_seconds,
@@ -136,7 +138,7 @@ def test_service_states_use_distinct_paths_and_records(
         monkeypatch.setenv(f'{prefix}_OAUTH_LOGIN_PASSWORD', 'test-password')
         monkeypatch.setenv(
             f'{prefix}_MCP_PUBLIC_URL',
-            f'https://mcp.example.test/{service}/mcp',
+            f'https://mcp.example.test/{service}',
         )
 
     configs = {
@@ -152,12 +154,12 @@ def test_service_states_use_distinct_paths_and_records(
         gmail.oauth_state_path,
         download_path=gmail.download_path,
         service_id=gmail.service_id,
-        resource=gmail.public_url,
+        resource=gmail.resource_url,
     ) as gmail_state:
         registered = gmail_state.register_client((REDIRECT_URI,))
         issued = gmail_state.issue_access_token(
             client_id=registered.client.client_id,
-            resource=gmail.public_url,
+            resource=gmail.resource_url,
         )
 
     drive = configs['drive']
@@ -167,6 +169,6 @@ def test_service_states_use_distinct_paths_and_records(
         drive.oauth_state_path,
         download_path=drive.download_path,
         service_id=drive.service_id,
-        resource=drive.public_url,
+        resource=drive.resource_url,
     ) as drive_state:
         assert drive_state.lookup_access_token(issued.access_token) is None

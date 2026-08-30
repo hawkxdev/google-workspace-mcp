@@ -32,6 +32,7 @@ from google_workspace_mcp.transport.extensions import Extension
 from google_workspace_mcp.transport.factory import create_service_app
 from google_workspace_mcp.transport.server import build_app
 
+ISSUER = 'https://mcp.example.test/gmail'
 RESOURCE = 'https://mcp.example.test/gmail/mcp'
 PUBLIC_HOST = 'mcp.example.test'
 REDIRECT_URI = 'https://client.example.test/callback'
@@ -65,7 +66,7 @@ def _config(tmp_path: Path, **overrides: object) -> ServiceConfig:
     download_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     values: dict[str, object] = {
         'service_id': 'gmail',
-        'public_url': RESOURCE,
+        'public_url': ISSUER,
         'mcp_path': '/gmail/mcp',
         'host': '127.0.0.1',
         'port': 8431,
@@ -96,7 +97,7 @@ def state(config: ServiceConfig) -> Iterator[OAuthState]:
     with OAuthState(
         config.oauth_state_path,
         service_id=config.service_id,
-        resource=config.public_url,
+        resource=config.resource_url,
         download_path=config.download_path,
     ) as opened:
         yield opened
@@ -176,7 +177,7 @@ def test_unconfigured_host_keeps_loopback_boundary(
     with OAuthState(
         config.oauth_state_path,
         service_id=config.service_id,
-        resource=config.public_url,
+        resource=config.resource_url,
         download_path=config.download_path,
     ) as state:
         app = build_app(config, state, PolicyMCPServer('gmail'))
@@ -363,7 +364,7 @@ def test_stalled_write_is_reported_as_audit_failure(
     'path, methods',
     [
         ('/ready', ['POST']),
-        ('/gmail/mcp/oauth/token', ['GET']),
+        ('/gmail/oauth/token', ['GET']),
         ('/.well-known/oauth-protected-resource/gmail/mcp', ['GET']),
     ],
 )
@@ -426,8 +427,10 @@ def test_extensions_are_released_on_early_factory_failures(
         def shutdown(self) -> None:
             events.append('shutdown')
 
-    invalid = _config(tmp_path / 'invalid', public_url='http://localhost')
-    with pytest.raises(ValueError, match='HTTPS'):
+    invalid = _config(
+        tmp_path / 'invalid', public_url='http://mcp.example.test/gmail'
+    )
+    with pytest.raises(ValueError, match='service identity|HTTPS'):
         create_service_app(invalid, extensions=[TrackedExtension()])
     assert events == ['shutdown']
 
@@ -494,9 +497,9 @@ def test_factory_rejects_state_paths_through_symlink_alias(
 def test_factory_rejects_invalid_public_url_before_touching_state(
     tmp_path: Path,
 ) -> None:
-    config = _config(tmp_path, public_url='http://127.0.0.1:8431')
+    config = _config(tmp_path, public_url='http://mcp.example.test/gmail')
 
-    with pytest.raises(ValueError, match='HTTPS'):
+    with pytest.raises(ValueError, match='service identity|HTTPS'):
         create_service_app(config)
 
     assert not config.oauth_state_path.exists()
@@ -527,7 +530,7 @@ def test_oversized_client_id_is_rejected_before_audit(
     client = TestClient(app, raise_server_exceptions=False)
 
     response = client.post(
-        '/gmail/mcp/oauth/token',
+        '/gmail/oauth/token',
         data={
             'grant_type': 'refresh_token',
             'refresh_token': 'irrelevant',

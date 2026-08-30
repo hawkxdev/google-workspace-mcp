@@ -32,7 +32,6 @@ from .state import (
     InvalidTarget,
     IssuedAccessToken,
     OAuthState,
-    canonicalize_resource,
 )
 
 logger = logging.getLogger(__name__)
@@ -85,9 +84,25 @@ def oauth_endpoint_urls(issuer: str) -> tuple[str, str, str]:
     )
 
 
+# Parameter helpers
+
+
+def _extract_single_param(source: Mapping[str, Any], name: str) -> str:
+    """Extract single request parameter."""
+    getlist = getattr(source, 'getlist', None)
+    if callable(getlist):
+        raw_values = getlist(name)
+        if isinstance(raw_values, list | tuple):
+            if len(raw_values) > 1:
+                raise ValueError(f'duplicate parameter {name}')
+            if len(raw_values) == 1:
+                return str(raw_values[0])
+            return ''
+    val = source.get(name, '')
+    return str(val or '')
+
+
 # Security helpers
-
-
 def _text_matches(candidate: str, expected: str) -> bool:
     """Compare text values securely."""
     candidate_digest = hashlib.sha256(candidate.encode('utf-8')).digest()
@@ -154,7 +169,8 @@ class OAuthEndpoints:
         """Initialize OAuth endpoints router."""
         # 1. Validate service binding
         expected_path = config.oauth_state_path.expanduser().absolute()
-        expected_resource = canonicalize_resource(config.public_url)
+        expected_issuer = config.public_url
+        expected_resource = config.resource_url
         if oauth_state.path != expected_path:
             raise ValueError('OAuth state path does not match ServiceConfig')
         if oauth_state.service_id != config.service_id:
@@ -171,19 +187,20 @@ class OAuthEndpoints:
         self._login_username = login_username
         self._login_password = login_password
         self._audit_writer = audit_writer
+        self._issuer = expected_issuer
         self._canonical_resource = expected_resource
         # 3. Build public endpoints
         self._protected_resource_metadata_url = (
             protected_resource_metadata_url(expected_resource)
         )
         self._authorization_server_metadata_url = (
-            authorization_server_metadata_url(expected_resource)
+            authorization_server_metadata_url(expected_issuer)
         )
         (
             self._authorization_endpoint_url,
             self._token_endpoint_url,
             self._registration_endpoint_url,
-        ) = oauth_endpoint_urls(expected_resource)
+        ) = oauth_endpoint_urls(expected_issuer)
         protected_path = unquote(
             urlsplit(self._protected_resource_metadata_url).path
         )
@@ -222,15 +239,14 @@ class OAuthEndpoints:
 
     async def oauth_metadata(self, request: Request) -> JSONResponse:
         """Handle server metadata request."""
-        base = self._canonical_resource
         return JSONResponse(
             {
-                'issuer': base,
+                'issuer': self._issuer,
                 'authorization_response_iss_parameter_supported': True,
                 'authorization_endpoint': self._authorization_endpoint_url,
                 'token_endpoint': self._token_endpoint_url,
                 'registration_endpoint': self._registration_endpoint_url,
-                'resource': base,
+                'resource': self._canonical_resource,
                 'response_types_supported': ['code'],
                 'grant_types_supported': [
                     'authorization_code',
@@ -245,11 +261,10 @@ class OAuthEndpoints:
 
     async def oauth_protected_resource(self, request: Request) -> JSONResponse:
         """Handle resource metadata request."""
-        base = self._canonical_resource
         return JSONResponse(
             {
-                'resource': base,
-                'authorization_servers': [base],
+                'resource': self._canonical_resource,
+                'authorization_servers': [self._issuer],
                 'bearer_methods_supported': ['header'],
             }
         )
@@ -270,7 +285,7 @@ class OAuthEndpoints:
             'code_challenge_method',
             'resource',
         )
-        params = {name: str(source.get(name, '') or '') for name in names}
+        params = {name: _extract_single_param(source, name) for name in names}
         if not params['code_challenge_method']:
             params['code_challenge_method'] = 'S256'
         return params
@@ -312,10 +327,7 @@ class OAuthEndpoints:
                 },
                 status_code=400,
             )
-        if (
-            canonicalize_resource(params['resource'])
-            != self._canonical_resource
-        ):
+        if params['resource'] != self._canonical_resource:
             return JSONResponse(
                 {
                     'error': 'invalid_target',
@@ -392,7 +404,16 @@ class OAuthEndpoints:
         """Handle user authorization request."""
         # Request validation
         form = await request.form() if request.method == 'POST' else None
-        params = self._request_parameters(request, form)
+        try:
+            params = self._request_parameters(request, form)
+        except ValueError as exc:
+            return JSONResponse(
+                {
+                    'error': 'invalid_request',
+                    'error_description': str(exc),
+                },
+                status_code=400,
+            )
         invalid = self._validate_authorization_request(request, params)
         if invalid is not None:
             return invalid
@@ -429,7 +450,7 @@ class OAuthEndpoints:
             resource=params['resource'],
             fresh_reauthorization=requires_reauthorization,
         )
-        query = {'code': code, 'iss': self._canonical_resource}
+        query = {'code': code, 'iss': self._issuer}
         if params['state']:
             query['state'] = params['state']
         separator = '&' if '?' in params['redirect_uri'] else '?'
@@ -445,22 +466,30 @@ class OAuthEndpoints:
     ) -> JSONResponse:
         """Exchange authorization code grant."""
         # Grant parameters
-        fields = {
-            name: str(form.get(name, '') or '')
-            for name in (
-                'code',
-                'client_id',
-                'client_secret',
-                'redirect_uri',
-                'code_verifier',
-                'resource',
-            )
-        }
+        try:
+            fields = {
+                name: _extract_single_param(form, name)
+                for name in (
+                    'code',
+                    'client_id',
+                    'client_secret',
+                    'redirect_uri',
+                    'code_verifier',
+                    'resource',
+                )
+            }
+        except ValueError as exc:
+            return _oauth_error('invalid_request', str(exc))
         if not all(fields.values()):
             return _oauth_error(
                 'invalid_request',
                 'code, client_id, client_secret, redirect_uri, '
                 'code_verifier, and resource are required',
+            )
+        if fields['resource'] != self._canonical_resource:
+            return _oauth_error(
+                'invalid_target',
+                'resource does not match this server',
             )
         # Code redemption
         try:
@@ -487,9 +516,12 @@ class OAuthEndpoints:
     ) -> JSONResponse:
         """Exchange refresh token grant."""
         # Refresh parameters
-        refresh_token = str(form.get('refresh_token', '') or '')
-        client_id = str(form.get('client_id', '') or '')
-        resource = canonicalize_resource(str(form.get('resource', '') or ''))
+        try:
+            refresh_token = _extract_single_param(form, 'refresh_token')
+            client_id = _extract_single_param(form, 'client_id')
+            resource = _extract_single_param(form, 'resource')
+        except ValueError as exc:
+            return _oauth_error('invalid_request', str(exc))
         if not refresh_token or not client_id or not resource:
             return _oauth_error(
                 'invalid_request',

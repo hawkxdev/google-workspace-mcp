@@ -23,6 +23,7 @@ from google_workspace_mcp.common.config import ServiceConfig
 from google_workspace_mcp.transport.authorization import PolicyMCPServer
 from google_workspace_mcp.transport.server import build_app
 
+ISSUER = 'https://mcp.example.test/gmail'
 RESOURCE = 'https://mcp.example.test/gmail/mcp'
 LOGIN_USER = 'test-user'
 LOGIN_PASS = 'test-pass'
@@ -41,7 +42,7 @@ def service_config(tmp_path: Path) -> ServiceConfig:
     state_dir.mkdir(mode=0o700, parents=True)
     return ServiceConfig(
         service_id='gmail',
-        public_url=RESOURCE,
+        public_url=ISSUER,
         mcp_path='/gmail/mcp',
         host='127.0.0.1',
         port=8431,

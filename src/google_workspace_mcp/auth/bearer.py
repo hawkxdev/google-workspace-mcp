@@ -32,27 +32,17 @@ from .state import (
     LEGACY_FULL,
     MCP_READONLY_V1,
     OAuthState,
-    canonicalize_resource,
 )
 
-_AUTH_EXEMPT_PATHS = frozenset(
-    {
-        '/health',
-        '/.well-known/oauth-authorization-server',
-        '/.well-known/oauth-protected-resource',
-        '/oauth/authorize',
-        '/oauth/token',
-        '/oauth/register',
-    }
-)
+_AUTH_EXEMPT_PATHS = frozenset({'/health'})
 
 
-def public_request_paths(resource: str) -> tuple[str, ...]:
+def public_request_paths(issuer: str, resource: str) -> tuple[str, ...]:
     """List unauthenticated request paths."""
     scoped = (
         protected_resource_metadata_url(resource),
-        authorization_server_metadata_url(resource),
-        *oauth_endpoint_urls(resource),
+        authorization_server_metadata_url(issuer),
+        *oauth_endpoint_urls(issuer),
     )
     paths = {*_AUTH_EXEMPT_PATHS}
     for url in scoped:
@@ -112,18 +102,18 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         """Configure bearer authentication."""
         super().__init__(app)
         expected_path = config.oauth_state_path.expanduser().absolute()
-        expected_resource = canonicalize_resource(config.public_url)
+        expected_issuer = config.public_url
+        expected_resource = config.resource_url
         resource_metadata_url = protected_resource_metadata_url(
             expected_resource
         )
         server_metadata_url = authorization_server_metadata_url(
-            expected_resource
+            expected_issuer
         )
         resource_metadata_path = urlsplit(resource_metadata_url).path
         server_metadata_path = urlsplit(server_metadata_url).path
         oauth_paths = tuple(
-            urlsplit(url).path
-            for url in oauth_endpoint_urls(expected_resource)
+            urlsplit(url).path for url in oauth_endpoint_urls(expected_issuer)
         )
         public_routing_paths = {
             unquote(resource_metadata_path),
@@ -155,6 +145,7 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         self._oauth_state = oauth_state
         self._resource = expected_resource
         self._resource_metadata_url = resource_metadata_url
+        self._public_paths = frozenset(public_routing_paths)
         self._public_raw_paths = frozenset(
             path.encode('ascii')
             for path in (
@@ -203,7 +194,11 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         """Check public request routes."""
         path = request.url.path
         raw_path = request.scope.get('raw_path', path.encode('ascii'))
-        if path in _AUTH_EXEMPT_PATHS or raw_path in self._public_raw_paths:
+        if (
+            path in _AUTH_EXEMPT_PATHS
+            or path in self._public_paths
+            or raw_path in self._public_raw_paths
+        ):
             return True
         return (
             self._config.mcp_path != '/'

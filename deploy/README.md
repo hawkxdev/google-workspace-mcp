@@ -1,6 +1,8 @@
 # Production Deployment
 
-This directory contains production assets for five isolated Google Workspace MCP services. The services share one package and one HTTPS virtual host, but each process owns its port, public resource, OAuth state, Google credential, audit log, download directory, and environment file.
+This directory contains production assets for five isolated Google Workspace MCP services. The services share one package and one HTTPS virtual host, but each process owns its port, service-base issuer, canonical protected resource, OAuth state, Google credential, audit log, download directory, and environment file.
+
+Production revision `7bac940` is deployed as five isolated loopback services behind the public HTTPS vhost. The cutover procedure and safety assets describe the transition mechanism; no cutover has occurred yet.
 
 Running these commands changes a production host. Review the rendered files and the rollback procedure before execution. Repository checkout, package publication, credential creation, DNS changes, certificate issuance, firewall changes, and deployment are not automated by these assets.
 
@@ -23,14 +25,13 @@ The service user cannot modify the root owned source, virtual environment, manag
 
 ## Services
 
-| Service | Unit | Loopback | Public resource | MCP path |
-|---|---|---:|---|---|
-| Gmail | `google-mcp@gmail` | `127.0.0.1:8431` | `https://mcp.hawkxdev.dev/gmail` | `/gmail/mcp` |
-| Calendar | `google-mcp@calendar` | `127.0.0.1:8432` | `https://mcp.hawkxdev.dev/calendar` | `/calendar/mcp` |
-| Drive | `google-mcp@drive` | `127.0.0.1:8433` | `https://mcp.hawkxdev.dev/drive` | `/drive/mcp` |
-| Sheets | `google-mcp@sheets` | `127.0.0.1:8434` | `https://mcp.hawkxdev.dev/sheets` | `/sheets/mcp` |
-| Docs | `google-mcp@docs` | `127.0.0.1:8435` | `https://mcp.hawkxdev.dev/docs` | `/docs/mcp` |
-
+| Service | Unit | Loopback | Service-base issuer | MCP path | Canonical protected resource |
+|---|---|---:|---|---|---|
+| Gmail | `google-mcp@gmail` | `127.0.0.1:8431` | `https://mcp.hawkxdev.dev/gmail` | `/gmail/mcp` | `https://mcp.hawkxdev.dev/gmail/mcp` |
+| Calendar | `google-mcp@calendar` | `127.0.0.1:8432` | `https://mcp.hawkxdev.dev/calendar` | `/calendar/mcp` | `https://mcp.hawkxdev.dev/calendar/mcp` |
+| Drive | `google-mcp@drive` | `127.0.0.1:8433` | `https://mcp.hawkxdev.dev/drive` | `/drive/mcp` | `https://mcp.hawkxdev.dev/drive/mcp` |
+| Sheets | `google-mcp@sheets` | `127.0.0.1:8434` | `https://mcp.hawkxdev.dev/sheets` | `/sheets/mcp` | `https://mcp.hawkxdev.dev/sheets/mcp` |
+| Docs | `google-mcp@docs` | `127.0.0.1:8435` | `https://mcp.hawkxdev.dev/docs` | `/docs/mcp` | `https://mcp.hawkxdev.dev/docs/mcp` |
 ## Preconditions
 
 Verify on the target host before changing files:
@@ -191,10 +192,22 @@ Each health response must name its service, and each loopback port must belong t
 
 ## Install nginx configuration
 
-Render `__DOMAIN__` into a temporary file, preserve the active file as rollback material, and validate before reload.
+Production uses a modular nginx layout separating static assets, upstreams, active service routing, and maintenance mode:
+
+- `deploy/nginx-google-workspace-mcp.conf`: primary vhost configuration, including `/etc/nginx/snippets/google-workspace-mcp-dynamic.inc`;
+- `deploy/nginx-google-workspace-mcp-active.inc`: active routing snippet proxying to loopback services, path-scoped OAuth routes, metadata discovery, and prefixed health/readiness;
+- `deploy/nginx-google-workspace-mcp-maintenance.inc`: maintenance snippet returning `503` with `Retry-After: 300` for all service routes during cutover windows;
+- `deploy/nginx-google-workspace-mcp-candidate.conf`: loopback-only TLS candidate ingress listening on `127.0.0.1:9443 ssl` for pre-cutover validation using production domain authority;
+- `deploy/nginx-google-workspace-mcp-bootstrap.conf`: bootstrap HTTP port 80 configuration for DNS and ACME validation.
+
+Install the dynamic snippet and primary vhost:
 
 ```bash
 set -euo pipefail
+install -d -o root -g root -m 0755 /etc/nginx/snippets
+install -o root -g root -m 0644 \
+  deploy/nginx-google-workspace-mcp-active.inc \
+  /etc/nginx/snippets/google-workspace-mcp-dynamic.inc
 sed 's/__DOMAIN__/mcp.hawkxdev.dev/g' \
   deploy/nginx-google-workspace-mcp.conf \
   > /tmp/google-workspace-mcp.conf
@@ -203,18 +216,22 @@ BACKUP=/root/backups/google-workspace-mcp-$(date -u +%Y%m%dT%H%M%SZ)
 install -d -o root -g root -m 0700 "$BACKUP"
 printf '%s\n' "$BACKUP" > /root/backups/google-workspace-mcp-last-backup
 chmod 0600 /root/backups/google-workspace-mcp-last-backup
-cp -a \
-  /etc/nginx/sites-available/google-workspace-mcp.conf \
-  "$BACKUP/google-workspace-mcp.conf"
+if [[ -f /etc/nginx/sites-available/google-workspace-mcp.conf ]]; then
+  cp -a \
+    /etc/nginx/sites-available/google-workspace-mcp.conf \
+    "$BACKUP/google-workspace-mcp.conf"
+fi
 install -o root -g root -m 0644 \
   /tmp/google-workspace-mcp.conf \
   /etc/nginx/sites-available/google-workspace-mcp.conf
 if nginx -t; then
   systemctl reload nginx
 else
-  cp -a \
-    "$BACKUP/google-workspace-mcp.conf" \
-    /etc/nginx/sites-available/google-workspace-mcp.conf
+  if [[ -f "$BACKUP/google-workspace-mcp.conf" ]]; then
+    cp -a \
+      "$BACKUP/google-workspace-mcp.conf" \
+      /etc/nginx/sites-available/google-workspace-mcp.conf
+  fi
   nginx -t
   exit 1
 fi
@@ -222,18 +239,73 @@ fi
 
 The configuration preserves the homepage, privacy page, assets, ACME path, certificate, and fallback 404. It adds five loopback upstreams, path scoped OAuth and MCP routes, metadata routes, and prefixed health and readiness routes.
 
+## Cutover safety CLI and ingress verification
+
+The `google-mcp-cutover` CLI enforces safety gates during cutover and maintenance operations:
+
+1. Identity preview: inspect and validate service identities and environment configuration:
+   ```bash
+   uv run --no-sync google-mcp-cutover identity preview --env-dir /etc/google-mcp
+   ```
+2. Reset preview: generate a state reset manifest before destructive transitions:
+   ```bash
+   uv run --no-sync google-mcp-cutover reset preview --env-dir /etc/google-mcp --state-root /var/lib/google-workspace-mcp
+   ```
+3. Maintenance attestation: verify nginx maintenance mode before mutating state:
+   ```bash
+   uv run --no-sync google-mcp-cutover maintenance attest \
+     --identity-manifest identity.json \
+     --output maintenance-attestation.json \
+     --nginx-master-pid <pid> \
+     --nginx-config-digest <sha256> \
+     --maintenance-include-target /etc/nginx/snippets/google-workspace-mcp-dynamic.inc \
+     --worker-generation <gen>
+   ```
+4. Offline snapshots: create and verify verified state snapshots before changes:
+   ```bash
+   uv run --no-sync google-mcp-cutover snapshot create \
+     --identity-manifest identity.json \
+     --reset-manifest reset.json \
+     --maintenance-attestation maintenance-attestation.json \
+     --destination /root/backups/google-mcp-snapshot
+   uv run --no-sync google-mcp-cutover snapshot verify --manifest /root/backups/google-mcp-snapshot/manifest.json
+   ```
+5. Gate journaling: track irreversible cutover gates:
+   ```bash
+   uv run --no-sync google-mcp-cutover journal create \
+     --identity-manifest identity.json \
+     --reset-manifest reset.json \
+     --snapshot-manifest snapshot.json \
+     --maintenance-attestation maintenance-attestation.json \
+     --output journal.json
+   uv run --no-sync google-mcp-cutover journal mark-gate-opened --journal journal.json --confirm-sha256 <digest>
+   ```
+
+Ingress verification is automated via `deploy/check-cutover-ingress.sh`:
+
+```bash
+# Pre-cutover validation against loopback candidate port 9443:
+./deploy/check-cutover-ingress.sh candidate
+
+# Post-cutover validation against public HTTPS:
+./deploy/check-cutover-ingress.sh public
+```
+
+The verification script confirms the positive 5-service matrix, rejects the negative routing matrix (old PRM, root OAuth, unmapped aliases), and asserts zero downstream state mutation during testing.
+
 ## Acceptance boundary
 
 This deployment accepts infrastructure only. It does not register or authorize downstream MCP clients.
 
 For each service verify:
 
-- public authorization server metadata returns `200` with the service path in the issuer and endpoints;
-- public protected resource metadata returns `200` with the service resource;
-- unauthenticated MCP `POST` returns `401` with a Bearer challenge;
-- public prefixed health returns `200` and names the service;
-- public prefixed readiness without a bearer token returns `401`;
-- an authorization request without a registered client returns an OAuth `400`, proving routing without creating client state.
+- public authorization server metadata (`/.well-known/oauth-authorization-server/<service>`) returns `200` with the service-base issuer and endpoints under `/<service>/oauth/`;
+- public protected resource metadata (`/.well-known/oauth-protected-resource/<service>/mcp`) returns `200` with canonical resource `https://mcp.hawkxdev.dev/<service>/mcp` and authorization server `https://mcp.hawkxdev.dev/<service>`;
+- unauthenticated MCP `POST` to `/<service>/mcp` returns `401` with a Bearer challenge referencing `/.well-known/oauth-protected-resource/<service>/mcp`;
+- public prefixed health (`/<service>/health`) returns `200` and names the service;
+- public prefixed readiness (`/<service>/ready`) without a bearer token returns `401`;
+- an authorization request without a registered client returns an OAuth `400`, proving routing without creating client state;
+- old PRM route (`/.well-known/oauth-protected-resource/<service>`) and root OAuth routes (`/oauth/authorize`, `/oauth/token`, `/oauth/register`) return `404`.
 
 Also verify HTTP to HTTPS redirect, HTTP/2, homepage, privacy page, static CSS, unknown path `404`, nginx syntax, unchanged firewall rules, unchanged certificate, `vault-mcp` health without a restart, `alert-relay` ping, and existing containers.
 

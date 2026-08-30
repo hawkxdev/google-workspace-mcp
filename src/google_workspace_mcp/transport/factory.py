@@ -10,8 +10,11 @@ from collections.abc import Sequence
 from starlette.applications import Starlette
 
 from google_workspace_mcp.audit.logger import validate_audit_path
-from google_workspace_mcp.auth.oauth import protected_resource_metadata_url
-from google_workspace_mcp.auth.state import OAuthState, canonicalize_resource
+from google_workspace_mcp.auth.oauth import (
+    authorization_server_metadata_url,
+    protected_resource_metadata_url,
+)
+from google_workspace_mcp.auth.state import OAuthState
 from google_workspace_mcp.common.config import (
     ServiceConfig,
     validate_forwarded_allow_ips,
@@ -28,7 +31,8 @@ logger = logging.getLogger(__name__)
 
 def _validate_public_url_is_https(config: ServiceConfig) -> None:
     """Validate public HTTPS resource."""
-    protected_resource_metadata_url(canonicalize_resource(config.public_url))
+    authorization_server_metadata_url(config.public_url)
+    protected_resource_metadata_url(config.resource_url)
 
 
 def _paths_alias(left: os.PathLike[str], right: os.PathLike[str]) -> bool:
@@ -88,7 +92,7 @@ def create_service_app(
             config.oauth_state_path,
             download_path=config.download_path,
             service_id=config.service_id,
-            resource=config.public_url,
+            resource=config.resource_url,
             readonly_capabilities=server.readonly_capabilities(),
             legacy_path=config.legacy_clients_path,
             approved_legacy_client_ids=config.approved_legacy_client_ids,

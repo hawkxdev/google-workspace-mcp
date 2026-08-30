@@ -14,13 +14,13 @@ The services share transport and authorization libraries but do not share creden
 
 ## Product Shape
 
-| Service | Default port | Default MCP path | Google product |
-|---|---:|---|---|
-| Gmail | `8431` | `/gmail/mcp` | Gmail API v1 |
-| Calendar | `8432` | `/calendar/mcp` | Calendar API v3 |
-| Drive | `8433` | `/drive/mcp` | Drive API v3 |
-| Sheets | `8434` | `/sheets/mcp` | Sheets API v4 |
-| Docs | `8435` | `/docs/mcp` | Docs API v1 |
+| Service | Default port | Default MCP path | Service-base issuer | Canonical protected resource | Google product |
+|---|---:|---|---|---|---|
+| Gmail | `8431` | `/gmail/mcp` | `https://mcp.hawkxdev.dev/gmail` | `https://mcp.hawkxdev.dev/gmail/mcp` | Gmail API v1 |
+| Calendar | `8432` | `/calendar/mcp` | `https://mcp.hawkxdev.dev/calendar` | `https://mcp.hawkxdev.dev/calendar/mcp` | Calendar API v3 |
+| Drive | `8433` | `/drive/mcp` | `https://mcp.hawkxdev.dev/drive` | `https://mcp.hawkxdev.dev/drive/mcp` | Drive API v3 |
+| Sheets | `8434` | `/sheets/mcp` | `https://mcp.hawkxdev.dev/sheets` | `https://mcp.hawkxdev.dev/sheets/mcp` | Sheets API v4 |
+| Docs | `8435` | `/docs/mcp` | `https://mcp.hawkxdev.dev/docs` | `https://mcp.hawkxdev.dev/docs/mcp` | Docs API v1 |
 
 Every process binds to loopback by default. A reverse proxy provides the public HTTPS surface.
 
@@ -48,9 +48,9 @@ flowchart LR
     Tools --> Files
 ```
 
-1. The MCP client discovers the service OAuth metadata.
+1. The MCP client discovers the service OAuth metadata through protected-resource metadata (`/.well-known/oauth-protected-resource/<service>/mcp`) and authorization-server metadata (`/.well-known/oauth-authorization-server/<service>`).
 2. The client completes OAuth 2.1 authorization with PKCE S256.
-3. The service validates the bearer token against its canonical public resource.
+3. The service validates the bearer token against its canonical protected resource (`/<service>/mcp`).
 4. The authorization policy limits the tools and resources available to the client.
 5. The selected MCP tool validates its input and calls the service provider gateway.
 6. The gateway refreshes the service-specific Google credential when required.
@@ -67,7 +67,7 @@ A Google credential never crosses the MCP boundary.
 | Process | Independent application process |
 | Network | Independent MCP path and default port |
 | MCP surface | Independent tool registry |
-| Client authorization | Independent OAuth state database and resource identifier |
+| Client authorization | Independent OAuth state database, service-base issuer, and protected resource identifier |
 | Google authorization | Independent scope set and refresh token |
 | Audit | Independent audit target |
 | Files | Independent managed download directory |
@@ -83,7 +83,7 @@ A service process is assembled from four layers.
 
 ### Service configuration
 
-`ServiceConfig` resolves the service-prefixed environment variables, default port, public URL, MCP path, credential paths, proxy trust, OAuth lifetimes, and operational limits.
+`ServiceConfig` resolves the service-prefixed environment variables, default port, service-base public URL, MCP path, derived canonical resource URL, credential paths, proxy trust, OAuth lifetimes, and operational limits.
 
 Configuration is immutable after startup.
 
@@ -129,11 +129,14 @@ Each service exposes the same endpoint classes under its own public URL.
 
 | Endpoint | Access | Purpose |
 |---|---|---|
-| `GET /health` | Public | Process liveness |
-| `GET /ready` | Authenticated | Service readiness |
-| `/<service>/mcp` | Authenticated | Streamable HTTP MCP |
-| OAuth metadata | Public | Authorization-server and protected-resource discovery |
-| OAuth authorization and token routes | OAuth flow | Client registration, authorization code and refresh grants |
+| `GET /health` (proxied as `/<service>/health`) | Public | Process liveness |
+| `GET /ready` (proxied as `/<service>/ready`) | Authenticated | Service readiness |
+| `/<service>/mcp` | Authenticated | Streamable HTTP MCP (canonical protected resource) |
+| `GET /.well-known/oauth-authorization-server/<service>` | Public | Authorization-server metadata (service-base issuer) |
+| `GET /.well-known/oauth-protected-resource/<service>/mcp` | Public | Protected-resource metadata (canonical MCP resource) |
+| `GET`, `POST /<service>/oauth/authorize` | OAuth flow | Owner login and authorization-code issuance |
+| `POST /<service>/oauth/token` | OAuth flow | Authorization-code and refresh grants |
+| `POST /<service>/oauth/register` | Public registration | Dynamic client registration |
 
 The configured MCP path is service-specific. The default paths are listed in the Product Shape table.
 
@@ -155,7 +158,7 @@ The MCP client uses OAuth 2.1 with:
 - token-family revocation;
 - dynamic client registration where supported.
 
-A bearer token is accepted only for the service resource that issued it.
+A bearer token is accepted only for the exact canonical protected service resource (`/<service>/mcp`) that issued it.
 
 ### Service to Google
 
@@ -183,7 +186,7 @@ SHEETS_
 DOCS_
 ```
 
-The public URL is required. The service derives OAuth metadata, bearer-token resource binding, and advertised endpoints from that URL.
+The public URL is required and specifies the service-base issuer (`https://<host>/<service>`). The service derives the canonical protected resource URL (`https://<host>/<service>/mcp`), OAuth metadata routes, bearer-token resource binding, and advertised endpoints from that URL.
 
 These paths must remain distinct:
 
@@ -266,13 +269,13 @@ google-mcp-sheets
 google-mcp-docs
 ```
 
-Google authorization and OAuth administration use separate commands:
+Google authorization, OAuth administration, and cutover safety use dedicated commands:
 
 ```text
 google-mcp-authorize
 google-mcp-oauth
+google-mcp-cutover
 ```
-
 ## Source Layout
 
 ```text
@@ -286,6 +289,7 @@ src/google_workspace_mcp/
 │   └── logger.py
 ├── cli/
 │   ├── authorize.py
+│   ├── cutover.py
 │   ├── oauth_admin.py
 │   ├── runner.py
 │   ├── gmail.py
@@ -320,16 +324,16 @@ Public operational assets:
 ```text
 deploy/
 ├── README.md
-├── google-mcp@.service
+├── check-cutover-ingress.sh
 ├── env/
-├── public/
-│   ├── index.html
-│   ├── privacy/
-│   └── assets/
+├── google-mcp@.service
+├── nginx-google-workspace-mcp-active.inc
 ├── nginx-google-workspace-mcp-bootstrap.conf
-└── nginx-google-workspace-mcp.conf
+├── nginx-google-workspace-mcp-candidate.conf
+├── nginx-google-workspace-mcp-maintenance.inc
+├── nginx-google-workspace-mcp.conf
+└── public/
 ```
-
 ## Local Setup
 
 Install the package and entry points:

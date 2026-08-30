@@ -5,10 +5,11 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 _STATE_ROOT = Path('~/.local/share/google-workspace-mcp')
 
-# === Environment parsing helpers ===
+# Environment parsing helpers
 
 
 def _default_port(service: str) -> int:
@@ -153,6 +154,51 @@ def _validate_mcp_path(path: str) -> None:
         )
 
 
+def _validate_service_identity(
+    service_id: str,
+    public_url: str,
+    mcp_path: str,
+) -> str:
+    """Validate service identity."""
+    parsed = urlsplit(public_url)
+    hostname = parsed.hostname or ''
+    labels = hostname.split('.')
+    expected_issuer = f'https://{hostname}/{service_id}'
+    expected_mcp_path = f'/{service_id}/mcp'
+    invalid_host = (
+        not hostname.isascii()
+        or len(hostname) > 253
+        or any(
+            not label
+            or len(label) > 63
+            or label.startswith('-')
+            or label.endswith('-')
+            or not all(c.isalnum() or c == '-' for c in label)
+            for label in labels
+        )
+    )
+    invalid_raw = (
+        not public_url.isascii()
+        or any(c.isspace() or ord(c) < 0x20 for c in public_url)
+        or '%' in public_url
+        or '\\' in public_url
+        or ':' in parsed.netloc
+        or public_url != expected_issuer
+    )
+    if (
+        invalid_raw
+        or invalid_host
+        or parsed.netloc != hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or mcp_path != expected_mcp_path
+    ):
+        raise ValueError('invalid service identity configuration')
+    return f'https://{hostname}{mcp_path}'
+
+
 def _is_unbounded_proxy_entry(entry: str) -> bool:
     """Detect unbounded proxy entry."""
     if '*' in entry:
@@ -179,7 +225,7 @@ def validate_forwarded_allow_ips(
     return ips
 
 
-# === Service configuration model ===
+# Service configuration model
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,6 +249,15 @@ class ServiceConfig:
     approved_legacy_client_ids: frozenset[str]
     access_token_ttl_seconds: int
     refresh_token_ttl_seconds: int
+
+    @property
+    def resource_url(self) -> str:
+        """Return exact resource URL."""
+        return _validate_service_identity(
+            self.service_id,
+            self.public_url,
+            self.mcp_path,
+        )
 
     @classmethod
     def from_env(cls, service: str) -> ServiceConfig:
@@ -255,7 +310,7 @@ class ServiceConfig:
             _csv(env.get(f'{prefix}_OAUTH_APPROVED_LEGACY_CLIENT_IDS'))
         )
         # 3. Build service configuration
-        return cls(
+        config = cls(
             service_id=service,
             public_url=public_url,
             mcp_path=mcp_path,
@@ -295,3 +350,5 @@ class ServiceConfig:
                 7776000,
             ),
         )
+        _ = config.resource_url
+        return config

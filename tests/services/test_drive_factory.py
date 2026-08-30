@@ -35,7 +35,7 @@ def _config(tmp_path: Path) -> ServiceConfig:
     downloads.mkdir(mode=0o700)
     return ServiceConfig(
         service_id='drive',
-        public_url='https://127.0.0.1:8433',
+        public_url='https://mcp.example.test/drive',
         mcp_path='/drive/mcp',
         host='127.0.0.1',
         port=8433,
@@ -122,7 +122,7 @@ def test_factory_default_config_from_env(
     downloads.mkdir(mode=0o700)
     for k, v in {
         'DRIVE_MCP_PORT': '8433',
-        'DRIVE_MCP_PUBLIC_URL': 'https://127.0.0.1:8433',
+        'DRIVE_MCP_PUBLIC_URL': 'https://mcp.example.test/drive',
         'DRIVE_MCP_PATH': '/drive/mcp',
         'DRIVE_OAUTH_STATE_PATH': str(root / 'oauth.db'),
         'DRIVE_GOOGLE_TOKEN_PATH': str(root / 'token.json'),

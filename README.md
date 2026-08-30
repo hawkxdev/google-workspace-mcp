@@ -26,7 +26,8 @@ The public HTTPS surface serves the homepage and privacy policy together with fi
 - Managed Gmail attachment and Drive download storage
 - OAuth state administration CLI
 - Google installed-application authorization CLI
-- A hardened systemd template, five isolated environment examples, and one path-aware nginx vhost
+- Cross-service cutover safety and state transition CLI
+- A hardened systemd template, five isolated environment examples, and active, maintenance, candidate, and bootstrap nginx assets
 
 ## Service capabilities
 
@@ -56,7 +57,7 @@ The project separates two authorization layers:
 1. An MCP client authenticates to one service through OAuth 2.1.
 2. That service authenticates to one Google product API through its own Google credential.
 
-Google credentials never cross the MCP boundary. An MCP bearer token is accepted only by the canonical service resource that issued it.
+Google credentials never cross the MCP boundary. An MCP bearer token is accepted only by the canonical protected MCP resource that issued it.
 
 Each process owns its MCP endpoint, Google scopes, Google credential, downstream OAuth state, audit target, managed-file directory, and tool registry.
 
@@ -123,7 +124,7 @@ DOCS_
 | `<SERVICE>_OAUTH_ACCESS_TOKEN_TTL_SECONDS` | no | `86400` |
 | `<SERVICE>_OAUTH_REFRESH_TOKEN_TTL_SECONDS` | no | `2592000` |
 
-The public URL must be an absolute HTTPS URL. OAuth metadata, bearer-token resource binding, and advertised endpoints are derived from it.
+The public URL must be an absolute HTTPS URL identifying the service-base issuer (for example `https://mcp.hawkxdev.dev/gmail`). The canonical protected MCP resource (`/<service>/mcp`), OAuth metadata, bearer-token resource binding, and advertised endpoints are derived from it.
 
 OAuth state, Google credentials, audit logs, and managed downloads must use distinct paths.
 
@@ -183,12 +184,15 @@ src/google_workspace_mcp/
 
 deploy/
 ├── README.md
-├── google-mcp@.service
+├── check-cutover-ingress.sh
 ├── env/
-├── public/
+├── google-mcp@.service
+├── nginx-google-workspace-mcp-active.inc
 ├── nginx-google-workspace-mcp-bootstrap.conf
-└── nginx-google-workspace-mcp.conf
-
+├── nginx-google-workspace-mcp-candidate.conf
+├── nginx-google-workspace-mcp-maintenance.inc
+├── nginx-google-workspace-mcp.conf
+└── public/
 docs/
 ├── overview.md
 ├── google-cloud-setup.md

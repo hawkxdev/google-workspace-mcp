@@ -9,27 +9,32 @@ The two token types are not interchangeable. Google credentials never authorize 
 
 ## MCP Client Authorization
 
-Each service is an OAuth authorization server and a protected MCP resource bound to its canonical HTTPS public URL.
+Each service is an OAuth authorization server bound to its service-base public URL (`https://<host>/<service>`) and a protected MCP resource bound to its canonical resource endpoint (`https://<host>/<service>/mcp`).
 
 ### Discovery and OAuth routes
 
 | Method | Route | Purpose |
 |---|---|---|
-| `GET` | `/.well-known/oauth-authorization-server<resource-path>` | Authorization-server metadata |
-| `GET` | `/.well-known/oauth-protected-resource<resource-path>` | Protected-resource metadata |
-| `GET`, `POST` | `/oauth/authorize` | Owner login and authorization-code issuance |
-| `POST` | `/oauth/token` | Authorization-code and refresh-token grants |
-| `POST` | `/oauth/register` | Dynamic client registration |
+| `GET` | `/.well-known/oauth-authorization-server/<service>` | Authorization-server metadata (service-base issuer) |
+| `GET` | `/.well-known/oauth-protected-resource/<service>/mcp` | Protected-resource metadata (canonical MCP resource) |
+| `GET`, `POST` | `/<service>/oauth/authorize` | Owner login and authorization-code issuance |
+| `POST` | `/<service>/oauth/token` | Authorization-code and refresh-token grants |
+| `POST` | `/<service>/oauth/register` | Dynamic client registration |
 
-Metadata advertises:
+Authorization-server metadata advertises:
 
+- the service-base issuer (`https://<host>/<service>`);
+- RFC 9207 authorization-response issuer identification (`iss`);
+- the service authorization, token, and registration endpoints under `/<service>/oauth/`;
 - authorization-code and refresh-token grants;
 - PKCE S256;
-- `client_secret_post` client authentication;
-- the canonical service resource;
-- the service authorization and token endpoints;
-- RFC 9207 authorization-response issuer identification.
+- `client_secret_post` client authentication.
 
+Protected-resource metadata advertises:
+
+- the canonical protected resource (`https://<host>/<service>/mcp`);
+- its authorization server (`https://<host>/<service>`);
+- bearer tokens in the HTTP header.
 ## Dynamic Client Registration
 
 A client registers one or more redirect URIs and an optional client name.
@@ -52,10 +57,10 @@ The MCP client must send:
 - one exact registered redirect URI;
 - a PKCE challenge;
 - `code_challenge_method=S256`;
-- the canonical service `resource`;
+- the canonical service `resource` (`https://<host>/<service>/mcp`);
 - an opaque `state` value.
 
-The owner authenticates with the service operator credentials. A successful authorization produces a one-time authorization code and redirects the browser to the registered URI. The redirect includes an `iss` parameter equal to the canonical metadata issuer so compatible clients can reject authorization-server mix-up.
+The owner authenticates with the service operator credentials. A successful authorization produces a one-time authorization code and redirects the browser to the registered URI. The redirect includes an `iss` parameter equal to the canonical service-base metadata issuer (`https://<host>/<service>`) so compatible clients can reject authorization-server mix-up.
 
 The token request must include:
 
@@ -63,7 +68,7 @@ The token request must include:
 - client ID and client secret;
 - the same redirect URI;
 - the PKCE verifier;
-- the same canonical resource.
+- the same canonical resource (`https://<host>/<service>/mcp`).
 
 Authorization codes are single-use and short-lived.
 
@@ -72,7 +77,7 @@ Authorization codes are single-use and short-lived.
 Access tokens:
 
 - use the service token format;
-- are bound to one canonical resource;
+- are bound to one canonical resource URL (`https://<host>/<service>/mcp`);
 - carry one service authorization policy;
 - have a bounded lifetime;
 - are revoked when their client, token, or refresh family is revoked.
@@ -104,7 +109,7 @@ A policy change can require a new interactive authorization instead of refresh.
 
 ## Bearer Enforcement
 
-Public routes include health, OAuth discovery, registration, authorization, and token exchange.
+Public routes include health, OAuth discovery (`/.well-known/oauth-authorization-server/<service>` and `/.well-known/oauth-protected-resource/<service>/mcp`), registration, authorization, and token exchange.
 
 Protected routes require one valid bearer token. The middleware rejects:
 
@@ -145,7 +150,7 @@ Each service has a separate SQLite state database containing:
 - resource and service ownership metadata;
 - expiry and revocation state.
 
-State storage is bound to one service and one canonical resource. Starting a service against state owned by another service or resource fails closed.
+State storage is bound to one service and one canonical resource URL (`https://<host>/<service>/mcp`). Starting a service against state owned by another service or resource URL fails closed.
 
 OAuth state, Google credentials, audit logs, and managed downloads must use separate paths.
 
@@ -247,7 +252,7 @@ The other four service grants remain unchanged.
 | Invalid bearer token | `401` | `invalid_token` |
 | Valid token without required capability | `403` | `insufficient_scope` |
 
-A `401` bearer response includes protected-resource metadata so compatible MCP clients can discover the correct authorization server.
+A `401` bearer response includes protected-resource metadata (`/.well-known/oauth-protected-resource/<service>/mcp`) so compatible MCP clients can discover the correct authorization server.
 
 ## Security Requirements
 

@@ -19,7 +19,7 @@ from google_workspace_mcp.auth.bearer import (
     public_request_paths,
 )
 from google_workspace_mcp.auth.oauth import OAuthEndpoints
-from google_workspace_mcp.auth.state import OAuthState, canonicalize_resource
+from google_workspace_mcp.auth.state import OAuthState
 from google_workspace_mcp.common.config import ServiceConfig
 from google_workspace_mcp.transport.authorization import PolicyMCPServer
 from google_workspace_mcp.transport.extensions import Extension
@@ -56,10 +56,11 @@ def _validate_extension_routes(
     ext_routes: Sequence[BaseRoute],
     *,
     mcp_path: str,
+    issuer: str,
     resource: str,
 ) -> None:
     """Validate extension route safety."""
-    exempt_paths = (*public_request_paths(resource), '/ready')
+    exempt_paths = (*public_request_paths(issuer, resource), '/ready')
     exempt_method_paths = (
         (('GET', '/'), ('HEAD', '/')) if mcp_path != '/' else ()
     )
@@ -138,6 +139,7 @@ def build_app(
         json_response=True,
         transport_security=_transport_security(config),
     )
+    mcp_app.router.redirect_slashes = False
 
     async def health(_: Request) -> JSONResponse:
         """Return service health status."""
@@ -194,6 +196,7 @@ def build_app(
         ],
         lifespan=app_lifespan,
     )
+    app.router.redirect_slashes = False
 
     before_ids = {id(r) for r in app.routes}
     for ext in extensions_tuple:
@@ -202,7 +205,7 @@ def build_app(
     _validate_extension_routes(
         ext_routes,
         mcp_path=config.mcp_path,
-        resource=canonicalize_resource(config.public_url),
+        issuer=config.public_url,
+        resource=config.resource_url,
     )
-
     return app
