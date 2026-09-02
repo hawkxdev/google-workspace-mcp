@@ -215,9 +215,9 @@ docs/
 - Full Calendar administration and permission management are not supported.
 - Raw Google request mappings and arbitrary provider field masks are not public tool inputs.
 
-## Author
+## Maintainers
 
-[Sergey Sokolkin (@hawkxdev)](https://github.com/hawkxdev)
+- [@hawkxdev](https://github.com/hawkxdev)
 
 ## License and provenance
 
