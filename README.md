@@ -2,7 +2,7 @@
 
 Five isolated remote MCP services for Gmail, Google Calendar, Google Drive, Google Sheets, and Google Docs. Each service runs as a separate process with its own endpoint, OAuth state, Google credential, scope set, and tool registry.
 
-> **Status: pre-alpha.** All five service processes and 55 service-owned tools are locally runnable. Production revision `7bac940` is deployed as five isolated loopback services behind the public HTTPS vhost; production Google credentials remain server-only and are never included in the repository.
+> **Status: pre-alpha.** All five service processes and 55 service-owned tools are locally runnable. The deployed revision runs as five isolated loopback services behind the public HTTPS vhost; production Google credentials remain server-only and are never included in the repository.
 
 ## Public pages
 
@@ -84,14 +84,24 @@ See [Google Cloud and OAuth setup](docs/google-cloud-setup.md) before creating s
 
 ## Development setup
 
-Run these commands from the source directory:
-
 ```bash
+git clone https://github.com/hawkxdev/google-workspace-mcp.git
 cd google-workspace-mcp
 uv sync --dev
 ```
 
 The virtual environment does not need to be activated. Run project commands through `uv run`.
+
+## Testing
+
+```bash
+uv run --no-sync pytest -q
+uv run --no-sync ruff check .
+uv run --no-sync ruff format --check .
+uv run --no-sync mypy src
+```
+
+The suite runs without network access, Google credentials, or a database. Provider calls are covered by transport doubles, so a test that reaches the network is a defect rather than an environment problem.
 
 ## Runtime configuration
 
@@ -125,6 +135,8 @@ DOCS_
 | `<SERVICE>_OAUTH_REFRESH_TOKEN_TTL_SECONDS` | no | `2592000` |
 
 The public URL must be an absolute HTTPS URL identifying the service-base issuer (for example `https://mcp.hawkxdev.dev/gmail`). The canonical protected MCP resource (`/<service>/mcp`), OAuth metadata, bearer-token resource binding, and advertised endpoints are derived from it.
+
+One example file per service is available under [`deploy/env/`](deploy/env): `gmail.env.example`, `calendar.env.example`, `drive.env.example`, `sheets.env.example`, and `docs.env.example`. Copy the one you need and fill in the required values.
 
 OAuth state, Google credentials, audit logs, and managed downloads must use distinct paths.
 
@@ -203,7 +215,7 @@ docs/
 
 ## Current boundaries
 
-- Production revision `7bac940` is deployed through one systemd template and five isolated instances.
+- The deployed revision runs through one systemd template and five isolated instances.
 - Production Google credentials are stored only in per-service owner-only files on the managed host.
 - The homepage, privacy policy, MCP routes, OAuth routes, metadata, health, and readiness share one HTTPS vhost without sharing process state.
 - Google OAuth publishing and verification are separate states.
@@ -214,6 +226,23 @@ docs/
 - Irreversible Gmail deletion is not supported.
 - Full Calendar administration and permission management are not supported.
 - Raw Google request mappings and arbitrary provider field masks are not public tool inputs.
+
+## Contributing
+
+The project is published as a working reference rather than as a product seeking contributors, so open an issue before writing code: a change that does not fit the service isolation model is expensive to review and unlikely to land.
+
+A pull request is expected to keep the checks below green and to explain which behavior changed and how that change was proven:
+
+```bash
+uv run --no-sync pytest -q
+uv run --no-sync ruff check .
+uv run --no-sync ruff format --check .
+uv run --no-sync mypy src
+```
+
+Two boundaries are not negotiable. Google credentials, OAuth state, audit logs, and managed downloads keep separate paths and never cross the MCP boundary. Real account identifiers, addresses, tokens, and user content never enter the repository, tests, or fixtures.
+
+Report anything that looks like a credential exposure privately through a GitHub security advisory on this repository instead of opening a public issue.
 
 ## Maintainers
 
