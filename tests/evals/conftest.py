@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -132,6 +133,23 @@ def make_bindings(
         objects=objects,
         applied_operations=completed,
     )
+
+
+def write_bindings(path: Path, bindings: FixtureBindings) -> None:
+    """Write one private binding registry."""
+    payload = bindings.model_dump(mode='json')
+    payload['owner_email'] = (
+        bindings.owner_email.get_secret_value()
+        if bindings.owner_email is not None
+        else None
+    )
+    payload['calendar_primary_id'] = (
+        bindings.calendar_primary_id.get_secret_value()
+        if bindings.calendar_primary_id is not None
+        else None
+    )
+    path.write_text(json.dumps(payload), encoding='utf-8')
+    path.chmod(0o600)
 
 
 @pytest.fixture
