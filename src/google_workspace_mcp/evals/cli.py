@@ -29,7 +29,7 @@ def _parser() -> argparse.ArgumentParser:
     apply.add_argument(
         '--credentials-dir',
         type=Path,
-        default=Path('private/google-tokens'),
+        required=True,
     )
     apply.add_argument(
         '--fixture-version',

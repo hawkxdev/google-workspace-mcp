@@ -494,6 +494,47 @@ def test_seed_credentials_reject_unsafe_paths(
 # === CLI contract ===
 
 
+def test_apply_cli_requires_explicit_credentials_directory(
+    protected_json_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Reject apply without explicit credentials."""
+    operation_calls: list[Path] = []
+
+    def fake_apply_fixture(
+        _bindings_path: Path,
+        _confirmation: ApplicationConfirmation,
+        *,
+        credentials_dir: Path,
+    ) -> FixtureBindings:
+        """Record unexpected fixture execution."""
+        operation_calls.append(credentials_dir)
+        return make_bindings()
+
+    monkeypatch.setattr(
+        'google_workspace_mcp.evals.cli.apply_fixture',
+        fake_apply_fixture,
+    )
+
+    with pytest.raises(SystemExit, match='2'):
+        main(
+            [
+                'apply',
+                '--bindings',
+                str(protected_json_file),
+                '--fixture-version',
+                'stage12-v1',
+                '--preview-digest',
+                'a' * 64,
+                '--acknowledge-writes',
+            ]
+        )
+
+    assert '--credentials-dir' in capsys.readouterr().err
+    assert operation_calls == []
+
+
 def test_apply_cli_passes_explicit_confirmation(
     protected_json_file: Path,
     tmp_path: Path,
