@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<evaluation fixture_version="stage12-v1" service="drive">
+  <qa_pair>
+    <task_id>drive_01</task_id>
+    <question>Search Drive for the exact name Synthetic fixture crimson-grove-f6j1 and return the integer fixture folder count.</question>
+    <expected_answer>1</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>drive_fixture_folder</ref></fixture_refs>
+    <allowed_tools><tool>drive_search_files</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>drive_02</task_id>
+    <question>Read drive_fixture_folder and return its MIME type exactly.</question>
+    <expected_answer>application/vnd.google-apps.folder</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>drive_fixture_folder</ref></fixture_refs>
+    <allowed_tools><tool>drive_get_file</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>drive_03</task_id>
+    <question>List drive_fixture_folder and return the integer number of fixture files inside it.</question>
+    <expected_answer>2</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>drive_fixture_folder</ref><ref>drive_note_file</ref><ref>drive_ledger_file</ref></fixture_refs>
+    <allowed_tools><tool>drive_list_folder</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>drive_04</task_id>
+    <question>List drive_fixture_folder, sort the two fixture filenames alphabetically, and join them with " | ".</question>
+    <expected_answer>Synthetic ledger teal-harbor-n5s8.csv | Synthetic note saffron-delta-b9k4.txt</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>drive_fixture_folder</ref><ref>drive_note_file</ref><ref>drive_ledger_file</ref></fixture_refs>
+    <allowed_tools><tool>drive_list_folder</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>drive_05</task_id>
+    <question>Read drive_note_file and return its filename exactly.</question>
+    <expected_answer>Synthetic note saffron-delta-b9k4.txt</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>drive_note_file</ref></fixture_refs>
+    <allowed_tools><tool>drive_get_file</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>drive_06</task_id>
+    <question>Read drive_note_file and return its MIME type exactly.</question>
+    <expected_answer>text/plain</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>drive_note_file</ref></fixture_refs>
+    <allowed_tools><tool>drive_get_file</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>drive_07</task_id>
+    <question>Read drive_ledger_file and return its filename exactly.</question>
+    <expected_answer>Synthetic ledger teal-harbor-n5s8.csv</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>drive_ledger_file</ref></fixture_refs>
+    <allowed_tools><tool>drive_get_file</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>drive_08</task_id>
+    <question>Read drive_ledger_file and return its MIME type exactly.</question>
+    <expected_answer>text/csv</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>drive_ledger_file</ref></fixture_refs>
+    <allowed_tools><tool>drive_get_file</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>drive_09</task_id>
+    <question>Search inside drive_fixture_folder for MIME type text/plain and return the integer fixture file count.</question>
+    <expected_answer>1</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>drive_fixture_folder</ref><ref>drive_note_file</ref></fixture_refs>
+    <allowed_tools><tool>drive_search_files</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>drive_10</task_id>
+    <question>Search Drive for the exact name Synthetic ledger teal-harbor-n5s8.csv and return the integer fixture file count.</question>
+    <expected_answer>1</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>drive_ledger_file</ref></fixture_refs>
+    <allowed_tools><tool>drive_search_files</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+</evaluation>

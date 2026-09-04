@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<evaluation fixture_version="stage12-v1" service="docs">
+  <qa_pair>
+    <task_id>docs_01</task_id>
+    <question>Read docs_primary metadata and return the document title exactly.</question>
+    <expected_answer>Synthetic document pearl-meadow-v8l3</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>docs_primary</ref></fixture_refs>
+    <allowed_tools><tool>docs_get_document</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>docs_02</task_id>
+    <question>Read docs_primary metadata and return the integer number of document tabs.</question>
+    <expected_answer>1</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>docs_primary</ref><ref>docs_primary_tab</ref></fixture_refs>
+    <allowed_tools><tool>docs_get_document</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>docs_03</task_id>
+    <question>Read docs_primary metadata and return the nesting_level of docs_primary_tab.</question>
+    <expected_answer>0</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>docs_primary</ref><ref>docs_primary_tab</ref></fixture_refs>
+    <allowed_tools><tool>docs_get_document</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>docs_04</task_id>
+    <question>Read all content from docs_primary_tab and return the integer number of nonempty text lines.</question>
+    <expected_answer>3</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>docs_primary</ref><ref>docs_primary_tab</ref></fixture_refs>
+    <allowed_tools><tool>docs_read_content</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>docs_05</task_id>
+    <question>Read docs_primary_tab and return the marker following Synthetic document marker exactly.</question>
+    <expected_answer>pearl-meadow-v8l3</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>docs_primary</ref><ref>docs_primary_tab</ref></fixture_refs>
+    <allowed_tools><tool>docs_read_content</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>docs_06</task_id>
+    <question>Read docs_primary_tab and return the integer value after Cobalt items.</question>
+    <expected_answer>3</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>docs_primary</ref><ref>docs_primary_tab</ref></fixture_refs>
+    <allowed_tools><tool>docs_read_content</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>docs_07</task_id>
+    <question>Read docs_primary_tab and return the integer value after Amber total.</question>
+    <expected_answer>25</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>docs_primary</ref><ref>docs_primary_tab</ref></fixture_refs>
+    <allowed_tools><tool>docs_read_content</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>docs_08</task_id>
+    <question>Read docs_primary_tab and return the named_style of its first paragraph exactly.</question>
+    <expected_answer>NORMAL_TEXT</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>docs_primary</ref><ref>docs_primary_tab</ref></fixture_refs>
+    <allowed_tools><tool>docs_read_content</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>docs_09</task_id>
+    <question>Read docs_primary_tab and return whether any fixture paragraph has a bullet marker. Return true or false.</question>
+    <expected_answer>false</expected_answer>
+    <normalizer>boolean</normalizer>
+    <fixture_refs><ref>docs_primary</ref><ref>docs_primary_tab</ref></fixture_refs>
+    <allowed_tools><tool>docs_read_content</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>docs_10</task_id>
+    <question>Read docs_primary_tab from its beginning with max_chars set to 20 and return next_start_index.</question>
+    <expected_answer>21</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>docs_primary</ref><ref>docs_primary_tab</ref></fixture_refs>
+    <allowed_tools><tool>docs_read_content</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+</evaluation>

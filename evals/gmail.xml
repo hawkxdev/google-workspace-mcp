@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<evaluation fixture_version="stage12-v1" service="gmail">
+  <qa_pair>
+    <task_id>gmail_01</task_id>
+    <question>Use gmail_list_drafts and count only the fixture draft referenced as gmail_draft_cobalt. Return the integer count.</question>
+    <expected_answer>1</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>gmail_draft_cobalt</ref></fixture_refs>
+    <allowed_tools><tool>gmail_list_drafts</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>gmail_02</task_id>
+    <question>Read gmail_draft_cobalt and return its subject exactly.</question>
+    <expected_answer>Synthetic draft cobalt-pine-k7v3</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>gmail_draft_cobalt</ref><ref>gmail_draft_message_cobalt</ref></fixture_refs>
+    <allowed_tools><tool>gmail_get_draft</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>gmail_03</task_id>
+    <question>Search Gmail messages for the exact marker amber-lake-q4n8 and count the fixture messages. Return the integer count.</question>
+    <expected_answer>2</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>gmail_delivery_alpha_root</ref><ref>gmail_delivery_alpha_reply</ref></fixture_refs>
+    <allowed_tools><tool>gmail_search_messages</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>gmail_04</task_id>
+    <question>Read gmail_message_alpha_root and return its plain text body exactly.</question>
+    <expected_answer>Root message marker: amber-lake-q4n8-root-f3.</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>gmail_message_alpha_root</ref></fixture_refs>
+    <allowed_tools><tool>gmail_get_message</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>gmail_05</task_id>
+    <question>Read gmail_message_alpha_reply and return its plain text body exactly.</question>
+    <expected_answer>Reply message marker: amber-lake-q4n8-reply-z9.</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>gmail_message_alpha_reply</ref></fixture_refs>
+    <allowed_tools><tool>gmail_get_message</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>gmail_06</task_id>
+    <question>Search Gmail threads for the exact marker amber-lake-q4n8 and return the message_count of the fixture thread.</question>
+    <expected_answer>2</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>gmail_thread_alpha</ref></fixture_refs>
+    <allowed_tools><tool>gmail_search_threads</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>gmail_07</task_id>
+    <question>Read gmail_thread_alpha and count its messages. Return the integer count.</question>
+    <expected_answer>2</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>gmail_thread_alpha</ref><ref>gmail_message_alpha_root</ref><ref>gmail_message_alpha_reply</ref></fixture_refs>
+    <allowed_tools><tool>gmail_get_thread</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>gmail_08</task_id>
+    <question>Search Gmail threads for the exact marker silver-fern-m2x6 and return the message_count of the fixture thread.</question>
+    <expected_answer>1</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>gmail_thread_beta</ref></fixture_refs>
+    <allowed_tools><tool>gmail_search_threads</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>gmail_09</task_id>
+    <question>Read gmail_message_beta_root with marker silver-fern-m2x6-root-c5 and return its subject exactly.</question>
+    <expected_answer>Synthetic notice silver-fern-m2x6</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>gmail_message_beta_root</ref></fixture_refs>
+    <allowed_tools><tool>gmail_get_message</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>gmail_10</task_id>
+    <question>List system Gmail labels and answer whether the INBOX label is present. Return true or false.</question>
+    <expected_answer>true</expected_answer>
+    <normalizer>boolean</normalizer>
+    <fixture_refs><ref>gmail_delivery_beta_root</ref></fixture_refs>
+    <allowed_tools><tool>gmail_list_labels</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+</evaluation>

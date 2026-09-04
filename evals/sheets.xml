@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<evaluation fixture_version="stage12-v1" service="sheets">
+  <qa_pair>
+    <task_id>sheets_01</task_id>
+    <question>Read sheets_primary metadata and return the spreadsheet title exactly.</question>
+    <expected_answer>Synthetic workbook umber-orbit-d2g7</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>sheets_primary</ref></fixture_refs>
+    <allowed_tools><tool>sheets_get_spreadsheet</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>sheets_02</task_id>
+    <question>Read sheets_primary metadata and return the integer number of sheets.</question>
+    <expected_answer>2</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>sheets_primary</ref><ref>sheets_inputs_tab</ref><ref>sheets_summary_tab</ref></fixture_refs>
+    <allowed_tools><tool>sheets_get_spreadsheet</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>sheets_03</task_id>
+    <question>Read sheets_primary metadata and return the configured row_count of the Inputs sheet.</question>
+    <expected_answer>20</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>sheets_primary</ref><ref>sheets_inputs_tab</ref></fixture_refs>
+    <allowed_tools><tool>sheets_get_spreadsheet</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>sheets_04</task_id>
+    <question>Read sheets_primary metadata and return the configured column_count of the Summary sheet.</question>
+    <expected_answer>6</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>sheets_primary</ref><ref>sheets_summary_tab</ref></fixture_refs>
+    <allowed_tools><tool>sheets_get_spreadsheet</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>sheets_05</task_id>
+    <question>Read Inputs!A1:C4 from sheets_primary with formatted rendering and return the integer row_count.</question>
+    <expected_answer>4</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>sheets_primary</ref><ref>sheets_inputs_tab</ref></fixture_refs>
+    <allowed_tools><tool>sheets_read_range</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>sheets_06</task_id>
+    <question>Read Inputs!C2:C4 from sheets_primary with unformatted rendering and return the sum with one decimal place.</question>
+    <expected_answer>25.0</expected_answer>
+    <normalizer>decimal_1</normalizer>
+    <fixture_refs><ref>sheets_primary</ref><ref>sheets_inputs_tab</ref></fixture_refs>
+    <allowed_tools><tool>sheets_read_range</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>sheets_07</task_id>
+    <question>Read Inputs!B3 from sheets_primary with formatted rendering and return the cell value exactly.</question>
+    <expected_answer>amber</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>sheets_primary</ref><ref>sheets_inputs_tab</ref></fixture_refs>
+    <allowed_tools><tool>sheets_read_range</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>sheets_08</task_id>
+    <question>Read Summary!B2 from sheets_primary with formula rendering and return the formula exactly.</question>
+    <expected_answer>=COUNTA(Inputs!B2:B4)</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>sheets_primary</ref><ref>sheets_summary_tab</ref></fixture_refs>
+    <allowed_tools><tool>sheets_read_range</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>sheets_09</task_id>
+    <question>Read Summary!B3 from sheets_primary with formula rendering and return the formula exactly.</question>
+    <expected_answer>=SUM(Inputs!C2:C4)</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>sheets_primary</ref><ref>sheets_summary_tab</ref></fixture_refs>
+    <allowed_tools><tool>sheets_read_range</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>sheets_10</task_id>
+    <question>Batch read Inputs!A1:C4 and Summary!A1:B3 from sheets_primary with formatted rendering and return the total integer cell_count across both ranges.</question>
+    <expected_answer>18</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>sheets_primary</ref><ref>sheets_inputs_tab</ref><ref>sheets_summary_tab</ref></fixture_refs>
+    <allowed_tools><tool>sheets_batch_read_ranges</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+</evaluation>

@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<evaluation fixture_version="stage12-v1" service="calendar">
+  <qa_pair>
+    <task_id>calendar_01</task_id>
+    <question>Search the primary fixture calendar from 2027-02-01T00:00:00Z through 2027-03-01T00:00:00Z for the exact marker violet-ridge-h8p2. Return the integer event count.</question>
+    <expected_answer>1</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>calendar_event_timed</ref></fixture_refs>
+    <allowed_tools><tool>calendar_search_events</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>calendar_02</task_id>
+    <question>Read calendar_event_timed and return its summary exactly.</question>
+    <expected_answer>Synthetic timed event violet-ridge-h8p2</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>calendar_event_timed</ref></fixture_refs>
+    <allowed_tools><tool>calendar_get_event</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>calendar_03</task_id>
+    <question>Read calendar_event_timed and calculate its duration in minutes. Return the integer duration.</question>
+    <expected_answer>45</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>calendar_event_timed</ref></fixture_refs>
+    <allowed_tools><tool>calendar_get_event</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>calendar_04</task_id>
+    <question>Read calendar_event_all_day with marker bronze-field-t5c9 and return its start date in YYYY-MM-DD form.</question>
+    <expected_answer>2027-02-12</expected_answer>
+    <normalizer>date</normalizer>
+    <fixture_refs><ref>calendar_event_all_day</ref></fixture_refs>
+    <allowed_tools><tool>calendar_get_event</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>calendar_05</task_id>
+    <question>Read calendar_event_all_day and calculate its all-day span using the exclusive end date. Return the integer day count.</question>
+    <expected_answer>2</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>calendar_event_all_day</ref></fixture_refs>
+    <allowed_tools><tool>calendar_get_event</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>calendar_06</task_id>
+    <question>Read calendar_event_recurring with marker indigo-brook-r3w7 and return the COUNT value from its RRULE recurrence.</question>
+    <expected_answer>3</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>calendar_event_recurring</ref></fixture_refs>
+    <allowed_tools><tool>calendar_get_event</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>calendar_07</task_id>
+    <question>List instances of calendar_event_recurring from 2027-02-16T00:00:00Z through 2027-02-20T00:00:00Z and return the integer instance count.</question>
+    <expected_answer>3</expected_answer>
+    <normalizer>integer</normalizer>
+    <fixture_refs><ref>calendar_event_recurring</ref></fixture_refs>
+    <allowed_tools><tool>calendar_list_event_instances</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>calendar_08</task_id>
+    <question>List instances of calendar_event_recurring from 2027-02-16T00:00:00Z through 2027-02-20T00:00:00Z and return the first instance start converted to UTC.</question>
+    <expected_answer>2027-02-16T06:00:00Z</expected_answer>
+    <normalizer>utc_datetime</normalizer>
+    <fixture_refs><ref>calendar_event_recurring</ref></fixture_refs>
+    <allowed_tools><tool>calendar_list_event_instances</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>calendar_09</task_id>
+    <question>Check free busy for the primary fixture calendar from 2027-02-10T07:00:00Z through 2027-02-10T07:45:00Z. Return whether the whole window is busy.</question>
+    <expected_answer>true</expected_answer>
+    <normalizer>boolean</normalizer>
+    <fixture_refs><ref>calendar_event_timed</ref></fixture_refs>
+    <allowed_tools><tool>calendar_get_freebusy</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+  <qa_pair>
+    <task_id>calendar_10</task_id>
+    <question>List calendars and return whether the calendar containing calendar_event_timed is marked primary.</question>
+    <expected_answer>true</expected_answer>
+    <normalizer>boolean</normalizer>
+    <fixture_refs><ref>calendar_event_timed</ref></fixture_refs>
+    <allowed_tools><tool>calendar_list_calendars</tool></allowed_tools>
+    <minimum_mcp_calls>1</minimum_mcp_calls>
+  </qa_pair>
+</evaluation>

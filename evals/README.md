@@ -34,6 +34,22 @@ A logical reference is stable within one fixture version. It is not a Google ID 
 | Docs | `docs_primary` | Sole synthetic document of the suite |
 | Docs | `docs_primary_tab` | Primary tab of the document |
 
+## Evaluation XML contract
+
+Each service file has an `evaluation` root with exact `fixture_version` and `service` attributes and exactly ten direct `qa_pair` children. Every pair contains these elements in order:
+
+| Element | Contract |
+|---|---|
+| `task_id` | Unique `<service>_<01..10>` identifier |
+| `question` | Self-contained English task with one canonical answer |
+| `expected_answer` | Public synthetic answer, never a Google ID or private value |
+| `normalizer` | One of `exact_string`, `integer`, `decimal_1`, `boolean`, `date`, `utc_datetime`, or `enum` |
+| `fixture_refs` | One or more service-local logical references from this catalog |
+| `allowed_tools` | Non-empty subset of the exact read-only registry for the service |
+| `minimum_mcp_calls` | `1`; a correct answer without an MCP call fails the route contract |
+
+All 50 task IDs and questions are unique. Across the five files, fixture references cover all 21 synthetic bindings and allowed tools cover the exact read-only registries 7/5/3/3/2. XML files contain no Google ID, account address, token, credential path, or private binding name.
+
 ## The private `bindings.json`
 
 The owner creates the registry `private/evals/bindings.json` before the first application: the file is written with mode `0600` inside a `0700` directory and carries the fixture version, state `planned`, two private values, and five credential references. The module intentionally provides no creation subcommand: these values come from the owner rather than being computed, so `apply` only reads a prepared registry and extends it as it goes. Loading rejects symlinks, special files, a foreign owner, a different mode, unknown fields, and an incompatible version. The fields `owner_email` and `calendar_primary_id` are private values and are masked by Pydantic on serialization. The `credentials.*.reference` fields hold references to separate user OAuth2 files only, and never a token or a client secret.
