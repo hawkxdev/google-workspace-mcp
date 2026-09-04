@@ -471,6 +471,33 @@ def test_public_preview_excludes_private_application_values() -> None:
 # === Credential path contract ===
 
 
+def test_apply_requires_credentials_without_factory(
+    protected_json_file: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bindings = _write_planned_bindings(protected_json_file)
+    transport = RecordingGoogleHttp()
+    credential_calls: list[Path] = []
+
+    def fake_build_services(credentials_dir: Path) -> GoogleServiceSet:
+        """Record implicit credential access."""
+        credential_calls.append(credentials_dir)
+        return transport.service_factory()
+
+    monkeypatch.setattr(
+        'google_workspace_mcp.evals.apply.build_application_services',
+        fake_build_services,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match='seed credential directory is required',
+    ):
+        apply_fixture(protected_json_file, _confirmation(bindings))
+
+    assert credential_calls == []
+
+
 def _credential_directory(tmp_path: Path) -> Path:
     """Create protected credential paths."""
     credentials_dir = tmp_path / 'google-tokens'

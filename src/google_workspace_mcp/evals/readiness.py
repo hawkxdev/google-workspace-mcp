@@ -22,6 +22,10 @@ from .requests import WRITE_OPERATION_IDS, GoogleServiceSet
 # === Probe contract ===
 
 
+class FixtureReadinessError(RuntimeError):
+    """Report failed readiness checks."""
+
+
 class ReadinessProbe(Protocol):
     """Read fixture objects once."""
 
@@ -229,13 +233,18 @@ def _require_complete_bindings(bindings: FixtureBindings) -> None:
         raise ValueError('bindings do not cover every write operation')
 
 
+def require_readiness_state(bindings: FixtureBindings) -> None:
+    """Require readiness eligible state."""
+    if bindings.state is BindingState.PLANNED:
+        raise ValueError('planned bindings cannot be checked for readiness')
+
+
 def check_readiness(
     bindings: FixtureBindings,
     probe: ReadinessProbe,
 ) -> ReadinessReport:
     """Run one bounded readiness pass."""
-    if bindings.state is BindingState.PLANNED:
-        raise ValueError('planned bindings cannot be checked for readiness')
+    require_readiness_state(bindings)
     missing = EXPECTED_LOGICAL_REFS - frozenset(bindings.objects)
     items: list[ReadinessItem] = []
     probe_count = 0

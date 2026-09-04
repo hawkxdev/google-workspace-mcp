@@ -16,6 +16,7 @@ from .models import (
 )
 from .preview import build_preview, confirm_application
 from .readiness import (
+    FixtureReadinessError,
     check_readiness,
     mark_bindings_ready,
     require_ready_for_xml,
@@ -29,6 +30,7 @@ __all__ = [
     'BindingState',
     'FixtureApplicationError',
     'FixtureBindings',
+    'FixtureReadinessError',
     'ReadinessReport',
     'apply_fixture',
     'build_application_services',

@@ -107,4 +107,13 @@ Drive creates one dedicated folder and two objects inside it, each with a unique
 
 ## Readiness check
 
-`check_readiness()` accepts only `applied` or `ready` bindings together with an injected read client. Each of the three Gmail deliveries gets exactly one exact-marker search, and every other logical reference exactly one read of the bound object. A missing binding triggers no broad search and returns `not_ready`. Only a complete report covering every logical reference with the exact probe count can move the registry to `ready` through `mark_bindings_ready()`.
+The live check uses the same five explicit credential files as seeding:
+
+```bash
+cd app
+uv run --no-sync python -m google_workspace_mcp.evals readiness \
+  --bindings ../private/evals/bindings.json \
+  --credentials-dir ../private/google-tokens
+```
+
+The command accepts only `applied` or `ready` bindings and rejects `planned` before reading credentials. Each of the three Gmail deliveries gets exactly one exact-marker search, and every other logical reference exactly one read of the bound object with `num_retries=0`. A missing object produces `not_ready`, exit code 1, and leaves the registry unchanged. A complete 21-item report moves the registry to `ready` through the same atomic private-file writer used by seeding. Output is limited to the fixture version, binding state, readiness status, probe count, and ready or not-ready counts; provider failures are reduced to `fixture readiness check failed` without response content, identifiers, paths, or chained exceptions.

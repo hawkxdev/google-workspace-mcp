@@ -612,7 +612,7 @@ def _secure_registry_directory(path: Path) -> int:
         raise ValueError('bindings directory is unavailable') from error
 
 
-def _save_bindings(path: Path, bindings: FixtureBindings) -> None:
+def save_bindings(path: Path, bindings: FixtureBindings) -> None:
     """Atomically save private bindings."""
     encoded = (
         json.dumps(
@@ -682,7 +682,7 @@ def apply_fixture(
     bindings_path: Path,
     confirmation: ApplicationConfirmation,
     *,
-    credentials_dir: Path = Path('private/google-tokens'),
+    credentials_dir: Path | None = None,
     service_factory: ServiceFactory | None = None,
 ) -> FixtureBindings:
     """Apply one confirmed fixture plan."""
@@ -693,6 +693,8 @@ def apply_fixture(
     _secret_value(bindings.calendar_primary_id, 'calendar_primary_id')
     factory = service_factory
     if factory is None:
+        if credentials_dir is None:
+            raise ValueError('seed credential directory is required')
 
         def factory() -> GoogleServiceSet:
             """Build credential-backed services."""
@@ -707,7 +709,7 @@ def apply_fixture(
                 operation.request.execute(num_retries=0)
             )
             current = _updated_bindings(current, operation, response)
-            _save_bindings(bindings_path, current)
+            save_bindings(bindings_path, current)
         except Exception:
             operation_id = operation.preview.operation_id
             raise FixtureApplicationError(
