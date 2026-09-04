@@ -51,7 +51,7 @@ class FakeRequest:
 
 
 class FakeSheetsSubEndpoint:
-    """Record spreadsheets.sheets endpoint calls."""
+    """Record endpoint calls."""
 
     def __init__(self) -> None:
         """Initialize fake endpoint state."""
@@ -194,7 +194,7 @@ def gateway(
     return SheetsGateway(store, service_builder=lambda _: fake_service)  # type: ignore[arg-type]
 
 
-# Rename Sheet Tests
+# === Rename Sheet Tests ===
 
 
 def test_rename_uses_title_only_field_mask(
@@ -306,7 +306,7 @@ def test_rename_sheet_handles_malformed_response(
         gateway.rename_sheet('book-1', 0, 'NewTitle')
 
 
-# Create Spreadsheet Tests
+# === Create Spreadsheet Tests ===
 
 
 def test_create_spreadsheet_root_only_with_locale_and_tz(
@@ -450,7 +450,7 @@ def test_create_spreadsheet_handles_malformed_response(
         gateway.create_spreadsheet('New Book')
 
 
-# Add Sheet Tests
+# === Add Sheet Tests ===
 
 
 def test_add_sheet_success_with_dimensions_and_index(
@@ -693,7 +693,7 @@ def test_add_sheet_handles_malformed_response(
         gateway.add_sheet('book-1', 'Sheet1')
 
 
-# Copy Sheet Tests
+# === Copy Sheet Tests ===
 
 
 def test_copy_sheet_same_book_with_title(
@@ -799,7 +799,6 @@ def test_copy_sheet_cross_book_success(
     }
     assert request.retries == [0]
 
-    # No batchUpdate calls or hidden renames
     assert len(fake_service.spreadsheets().calls) == 0
 
     assert result == SheetCopyResult(
@@ -904,7 +903,7 @@ def test_copy_sheet_handles_malformed_cross_book_response(
         gateway.copy_sheet('source-book', 0, 'dest-book')
 
 
-# Write num_retries=0 Verification
+# === Write num_retries=0 Verification ===
 
 
 def test_all_structural_write_methods_use_zero_retries(

@@ -312,7 +312,6 @@ def test_batch_update_ranges_single_explicit_raw_mode(
 def test_batch_update_ranges_range_limit_boundary(
     fake_service: FakeSheetsService, gateway: SheetsGateway, store: FakeStore
 ) -> None:
-    # 20 ranges is allowed
     data_20 = tuple(
         SheetsWriteRange(range_name=f'Sheet1!A{i}', values=((i,),))
         for i in range(1, 21)
@@ -344,7 +343,6 @@ def test_batch_update_ranges_range_limit_boundary(
     )
     assert store.calls == 1
 
-    # 21 ranges rejected preauth
     data_21 = data_20 + (
         SheetsWriteRange(range_name='Sheet1!A21', values=((21,),)),
     )
@@ -363,9 +361,8 @@ def test_batch_update_ranges_range_limit_boundary(
 def test_batch_update_ranges_total_cell_limit_boundary(
     fake_service: FakeSheetsService, gateway: SheetsGateway, store: FakeStore
 ) -> None:
-    # 10 ranges of 1000 cells each = 10,000 cells allowed
     row_100 = tuple(range(100))
-    grid_1000 = tuple(row_100 for _ in range(10))  # 10x100 = 1000 cells
+    grid_1000 = tuple(row_100 for _ in range(10))
     data_10k = tuple(
         SheetsWriteRange(
             range_name=f'Sheet1!A{i * 10 + 1}:CV{i * 10 + 10}',
@@ -397,7 +394,6 @@ def test_batch_update_ranges_total_cell_limit_boundary(
     )
     assert store.calls == 1
 
-    # Add one cell so 10001 cells rejected preauth
     data_10001 = data_10k + (
         SheetsWriteRange(range_name='Sheet2!A1', values=((1,),)),
     )

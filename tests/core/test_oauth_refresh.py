@@ -36,7 +36,7 @@ CHALLENGE = (
 )
 
 
-# Shared state fixtures
+# === Shared state fixtures ===
 
 
 @pytest.fixture
@@ -92,7 +92,7 @@ def _authorize(state: OAuthState) -> tuple[str, str, object]:
     return client_id, issued_client.client_secret, issued
 
 
-# State lifecycle tests
+# === State lifecycle tests ===
 
 
 def test_authorization_code_exchange_returns_a_refresh_token(
@@ -269,7 +269,7 @@ def test_raw_refresh_secret_never_persists(state_paths) -> None:
     assert secret.encode() not in blob
 
 
-# Endpoint contracts
+# === Endpoint contracts ===
 
 
 @pytest.fixture
@@ -394,7 +394,7 @@ def _endpoint_authorize(endpoint: TestClient) -> tuple[str, dict]:
     return client_id, token.json()
 
 
-# Endpoint flow tests
+# === Endpoint flow tests ===
 
 
 def test_metadata_advertises_refresh_token_grant(

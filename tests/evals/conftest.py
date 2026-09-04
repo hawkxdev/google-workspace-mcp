@@ -54,7 +54,7 @@ def _identifiers(
     logical_ref: str,
     resource_kind: ResourceKind,
 ) -> ProviderIdentifiers:
-    """Build kind-specific provider identifiers."""
+    """Build provider identifiers."""
     token = logical_ref.replace('_', '-')
     values: dict[str, Any]
     match resource_kind:
@@ -136,7 +136,7 @@ def make_bindings(
 
 
 def write_bindings(path: Path, bindings: FixtureBindings) -> None:
-    """Write one private binding registry."""
+    """Write private binding registry."""
     payload = bindings.model_dump(mode='json')
     payload['owner_email'] = (
         bindings.owner_email.get_secret_value()

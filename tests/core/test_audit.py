@@ -1,4 +1,4 @@
-"""Tests for audit logging and service configuration."""
+"""Audit configuration tests."""
 
 import concurrent.futures
 import json
@@ -121,6 +121,7 @@ def test_audit_logger_concurrent_append(tmp_path: Path) -> None:
     num_events = 50
 
     def _write_event(idx: int) -> None:
+        """Write test event."""
         logger.log_event({'index': idx, 'status': 'ok'})
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:

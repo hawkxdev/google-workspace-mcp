@@ -1,4 +1,4 @@
-"""Tests for transport and audit hardening."""
+"""Transport hardening tests."""
 
 import base64
 import hashlib
@@ -89,11 +89,13 @@ def _config(tmp_path: Path, **overrides: object) -> ServiceConfig:
 
 @pytest.fixture
 def config(tmp_path: Path) -> ServiceConfig:
+    """Provide test configuration."""
     return _config(tmp_path)
 
 
 @pytest.fixture
 def state(config: ServiceConfig) -> Iterator[OAuthState]:
+    """Provide test state."""
     with OAuthState(
         config.oauth_state_path,
         service_id=config.service_id,
@@ -107,14 +109,19 @@ class _RouteExtension(Extension):
     """Extension registering one route."""
 
     def __init__(self, path: str, methods: list[str]) -> None:
+        """Initialize test double."""
         self._path = path
         self._methods = methods
 
     def register_tools(self, registrar: ToolRegistrar) -> None:
+        """Register test tools."""
         pass
 
     def register_routes(self, app: object) -> None:
+        """Register test routes."""
+
         async def handler(request: object) -> PlainTextResponse:
+            """Handle test request."""
             return PlainTextResponse('extension')
 
         app.routes.append(  # type: ignore[attr-defined]
@@ -122,14 +129,15 @@ class _RouteExtension(Extension):
         )
 
     def shutdown(self) -> None:
+        """Stop test resource."""
         pass
 
 
-# Transport host binding
+# === Transport host binding ===
 
 
 def _issue_access_token(state: OAuthState) -> str:
-    """Issue one readonly access token."""
+    """Issue readonly access token."""
     registered = state.register_client((REDIRECT_URI,))
     code = state.issue_authorization_code(
         client_id=registered.client.client_id,
@@ -192,26 +200,33 @@ def test_unconfigured_host_keeps_loopback_boundary(
     assert response.status_code == 421
 
 
-# Tool capability propagation
+# === Tool capability propagation ===
 
 
 def test_registered_tool_capabilities_reach_oauth_state(
     config: ServiceConfig,
 ) -> None:
     class ToolExtension(Extension):
+        """Model test extension."""
+
         def register_tools(self, registrar: ToolRegistrar) -> None:
+            """Register test tools."""
+
             @registrar.tool(
                 name='search_messages',
                 required_capability='mail.read',
                 available_to_readonly=True,
             )
             def search_messages() -> str:
+                """Search fake messages."""
                 return 'ok'
 
         def register_routes(self, app: object) -> None:
+            """Register test routes."""
             pass
 
         def shutdown(self) -> None:
+            """Stop test resource."""
             pass
 
     _, server, state = create_service_app(config, extensions=[ToolExtension()])
@@ -222,7 +237,7 @@ def test_registered_tool_capabilities_reach_oauth_state(
         state.close()
 
 
-# Refresh rotation atomicity
+# === Refresh rotation atomicity ===
 
 
 def test_failed_rotation_audit_keeps_refresh_token_usable(
@@ -248,6 +263,7 @@ def test_failed_rotation_audit_keeps_refresh_token_usable(
     assert refresh_token is not None
 
     def failing_writer(record: dict[str, object]) -> None:
+        """Simulate writer failure."""
         raise AuditError('Failed to record audit event')
 
     endpoints = OAuthEndpoints(
@@ -279,7 +295,7 @@ def test_failed_rotation_audit_keeps_refresh_token_usable(
     assert len(written) == 1
 
 
-# Audit path boundaries
+# === Audit path boundaries ===
 
 
 def test_validate_audit_path_rejects_untrusted_symlink_ancestor(
@@ -333,6 +349,7 @@ def test_short_write_completes_the_audit_record(
     real_write = os.write
 
     def short_write(fd: int, data: object) -> int:
+        """Simulate short write."""
         return real_write(fd, bytes(data)[:8])  # type: ignore[arg-type]
 
     monkeypatch.setattr(os, 'write', short_write)
@@ -349,6 +366,7 @@ def test_stalled_write_is_reported_as_audit_failure(
     target = tmp_path / 'state' / 'audit.jsonl'
 
     def stalled_write(fd: int, data: object) -> int:
+        """Simulate stalled write."""
         return 0
 
     monkeypatch.setattr(os, 'write', stalled_write)
@@ -357,7 +375,7 @@ def test_stalled_write_is_reported_as_audit_failure(
         AuditLogger(target).log_event({'op': 'oauth_refresh_rotation'})
 
 
-# Extension route boundaries
+# === Extension route boundaries ===
 
 
 @pytest.mark.parametrize(
@@ -389,20 +407,29 @@ def test_prepared_extensions_are_released_on_construction_failure(
     events: list[str] = []
 
     class PreparedExtension(Extension):
+        """Model test extension."""
+
         def register_tools(self, registrar: ToolRegistrar) -> None:
+            """Register test tools."""
             events.append('prepared')
 
         def register_routes(self, app: object) -> None:
+            """Register test routes."""
             pass
 
         def shutdown(self) -> None:
+            """Stop test resource."""
             events.append('shutdown')
 
     class CollidingExtension(_RouteExtension):
+        """Model test extension."""
+
         def __init__(self) -> None:
+            """Initialize test double."""
             super().__init__('/health', ['GET'])
 
         def shutdown(self) -> None:
+            """Stop test resource."""
             events.append('colliding-shutdown')
 
     with pytest.raises(ValueError, match='auth-exempt path'):
@@ -420,11 +447,15 @@ def test_extensions_are_released_on_early_factory_failures(
     events: list[str] = []
 
     class TrackedExtension(Extension):
+        """Model test extension."""
+
         def register_tools(self, registrar: ToolRegistrar) -> None:
+            """Register test tools."""
             events.append('register')
             raise RuntimeError('registration failed')
 
         def shutdown(self) -> None:
+            """Stop test resource."""
             events.append('shutdown')
 
     invalid = _config(
@@ -441,7 +472,7 @@ def test_extensions_are_released_on_early_factory_failures(
     assert events == ['register', 'shutdown']
 
 
-# Startup validation
+# === Startup validation ===
 
 
 def test_factory_rejects_audit_path_colliding_with_state_or_token(
@@ -520,7 +551,7 @@ def test_unbounded_proxy_entries_are_rejected(entry: str) -> None:
         validate_forwarded_allow_ips((entry,), 'GMAIL')
 
 
-# Public endpoint input bounds
+# === Public endpoint input bounds ===
 
 
 def test_oversized_client_id_is_rejected_before_audit(

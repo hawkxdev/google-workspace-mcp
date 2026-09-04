@@ -1,4 +1,4 @@
-"""Test Drive folder creation and managed file upload."""
+"""Drive creation behavior tests."""
 
 from __future__ import annotations
 
@@ -50,11 +50,13 @@ class FakeRequest:
         value: Any = None,
         error: Exception | None = None,
     ) -> None:
+        """Initialize test double."""
         self.value = value
         self.error = error
         self.retries: list[int] = []
 
     def execute(self, *, num_retries: int = 0) -> Any:
+        """Execute prepared resource."""
         self.retries.append(num_retries)
         if self.error is not None:
             raise self.error
@@ -62,16 +64,19 @@ class FakeRequest:
 
 
 class FakeFilesEndpoint:
-    """Record Drive files endpoint calls."""
+    """Record endpoint calls."""
 
     def __init__(self) -> None:
+        """Initialize test double."""
         self.responses: dict[str, deque[Any]] = defaultdict(deque)
         self.calls: list[tuple[str, dict[str, Any], FakeRequest]] = []
 
     def queue(self, method: str, *values: Any) -> None:
+        """Queue provider resource."""
         self.responses[method].extend(values)
 
     def _call(self, method: str, kwargs: dict[str, Any]) -> FakeRequest:
+        """Record provider call."""
         if not self.responses[method]:
             raise AssertionError(f'No response queued for files().{method}()')
         value = self.responses[method].popleft()
@@ -82,9 +87,11 @@ class FakeFilesEndpoint:
         return request
 
     def create(self, **kwargs: Any) -> FakeRequest:
+        """Create fake create."""
         return self._call('create', kwargs)
 
     def get(self, **kwargs: Any) -> FakeRequest:
+        """Get fake get."""
         return self._call('get', kwargs)
 
 
@@ -92,9 +99,11 @@ class FakeDriveService:
     """Expose fake Drive endpoints."""
 
     def __init__(self) -> None:
+        """Initialize test double."""
         self.files_endpoint = FakeFilesEndpoint()
 
     def files(self) -> FakeFilesEndpoint:
+        """Return files resource."""
         return self.files_endpoint
 
 
@@ -102,17 +111,19 @@ class FakeStore(GoogleCredentialStore):
     """Return Drive test credentials."""
 
     def __init__(self) -> None:
+        """Initialize test double."""
         self.credentials = GoogleCredentials(
             token='test-drive-token',
             scopes=DRIVE_SCOPES,
         )
 
     def refresh(self, request: Any = None) -> GoogleCredentials:
+        """Refresh fake resource."""
         return self.credentials
 
 
 class FakeUploader:
-    """Record MediaIoBaseUpload construction and descriptor state."""
+    """Record upload construction."""
 
     instances: list[FakeUploader] = []
 
@@ -123,12 +134,13 @@ class FakeUploader:
         chunksize: int = 104857600,
         resumable: bool = False,
     ) -> None:
+        """Initialize test double."""
         self.fd = fd
         self.mimetype = mimetype
         self.chunksize = chunksize
         self.resumable = resumable
         self.was_open_at_init = not fd.closed
-        # Read content while open to verify readable descriptor
+        # Step: Verify open descriptor readability
         pos = fd.tell()
         self.captured_content = fd.read()
         fd.seek(pos)
@@ -142,6 +154,7 @@ def _file_payload(
     size: int = 1024,
     parents: list[str] | None = None,
 ) -> dict[str, Any]:
+    """Build file payload."""
     return {
         'id': file_id,
         'name': name,
@@ -161,6 +174,7 @@ def _file_payload(
 
 
 def _http_error(status: int, reason: str = 'error') -> HttpError:
+    """Build HTTP error."""
     content = json.dumps(
         {
             'error': {
@@ -176,17 +190,17 @@ def _http_error(status: int, reason: str = 'error') -> HttpError:
 
 @pytest.fixture(autouse=True)
 def _reset_fake_uploader() -> None:
+    """Reset fake uploader."""
     FakeUploader.instances.clear()
 
 
 @pytest.fixture
 def managed_store(tmp_path: Path) -> ManagedFileStore:
+    """Provide managed store."""
     return ManagedFileStore(directory=tmp_path)
 
 
-# -----------------------------------------------------------------------------
 # Step 1: Create Folder Tests
-# -----------------------------------------------------------------------------
 
 
 def test_create_folder_success_without_parent() -> None:
@@ -285,7 +299,6 @@ def test_create_folder_handles_provider_errors() -> None:
     fake_service = FakeDriveService()
     gateway = DriveGateway(FakeStore(), service_builder=lambda _: fake_service)
 
-    # 401
     fake_service.files_endpoint.queue(
         'create', FakeRequest(error=_http_error(401, 'unauthorized'))
     )
@@ -294,7 +307,6 @@ def test_create_folder_handles_provider_errors() -> None:
     ):
         gateway.create_folder(name='Folder 401')
 
-    # 403 scope error
     fake_service.files_endpoint.queue(
         'create',
         FakeRequest(error=_http_error(403, 'insufficientFilePermissions')),
@@ -305,7 +317,6 @@ def test_create_folder_handles_provider_errors() -> None:
     ):
         gateway.create_folder(name='Folder 403')
 
-    # 404
     fake_service.files_endpoint.queue(
         'create', FakeRequest(error=_http_error(404, 'notFound'))
     )
@@ -314,7 +325,6 @@ def test_create_folder_handles_provider_errors() -> None:
     ):
         gateway.create_folder(name='Folder 404')
 
-    # 429
     fake_service.files_endpoint.queue(
         'create', FakeRequest(error=_http_error(429, 'rateLimitExceeded'))
     )
@@ -323,7 +333,6 @@ def test_create_folder_handles_provider_errors() -> None:
     ):
         gateway.create_folder(name='Folder 429')
 
-    # TransportError
     fake_service.files_endpoint.queue(
         'create', FakeRequest(error=TransportError('Network down'))
     )
@@ -337,7 +346,6 @@ def test_create_folder_rejects_malformed_response() -> None:
     fake_service = FakeDriveService()
     gateway = DriveGateway(FakeStore(), service_builder=lambda _: fake_service)
 
-    # Missing ID
     fake_service.files_endpoint.queue(
         'create', {'name': 'Folder', 'mimeType': DRIVE_FOLDER_MIME}
     )
@@ -347,9 +355,7 @@ def test_create_folder_rejects_malformed_response() -> None:
         gateway.create_folder(name='Folder')
 
 
-# -----------------------------------------------------------------------------
 # Step 2: Upload File Tests
-# -----------------------------------------------------------------------------
 
 
 def test_upload_file_success_without_parent(
@@ -396,7 +402,6 @@ def test_upload_file_success_without_parent(
     assert result.file.name == 'hello.txt'
     assert result.file.size == len(payload)
 
-    # Verify endpoint call
     assert len(fake_service.files_endpoint.calls) == 1
     method, kwargs, request = fake_service.files_endpoint.calls[0]
     assert method == 'create'
@@ -405,7 +410,6 @@ def test_upload_file_success_without_parent(
     assert kwargs['fields'] == DRIVE_FILE_FIELDS
     assert request.retries == [2]
 
-    # Verify FakeUploader construction and descriptor state
     assert len(FakeUploader.instances) == 1
     uploader = FakeUploader.instances[0]
     assert uploader.was_open_at_init is True
@@ -481,7 +485,10 @@ def test_upload_file_verifies_descriptor_lifetime(
     descriptor_was_open_during_execute = False
 
     class InspectingRequest(FakeRequest):
+        """Inspect request execution."""
+
         def execute(self, *, num_retries: int = 0) -> Any:
+            """Execute prepared resource."""
             nonlocal descriptor_was_open_during_execute
             assert len(FakeUploader.instances) == 1
             fd = FakeUploader.instances[0].fd
@@ -512,7 +519,7 @@ def test_upload_file_verifies_descriptor_lifetime(
     )
 
     assert descriptor_was_open_during_execute is True
-    # After upload_file completes, the descriptor context must have closed fd
+    # Step: Verify descriptor closure
     assert FakeUploader.instances[0].fd.closed is True
 
 
@@ -702,7 +709,6 @@ def test_upload_file_rejects_invalid_inputs(
     fake_service = FakeDriveService()
     gateway = DriveGateway(FakeStore(), service_builder=lambda _: fake_service)
 
-    # Empty / whitespace name
     with pytest.raises(DriveInputError, match='[Nn]ame'):
         gateway.upload_file(
             managed_name='file.txt',
@@ -736,7 +742,6 @@ def test_upload_file_rejects_invalid_inputs(
             files=managed_store,
         )
 
-    # Empty / oversized mime_type
     with pytest.raises(DriveInputError, match='MIME'):
         gateway.upload_file(
             managed_name='file.txt',
@@ -759,7 +764,6 @@ def test_upload_file_rejects_invalid_inputs(
             files=managed_store,
         )
 
-    # Invalid sha256 (not 64 chars or empty)
     with pytest.raises(DriveInputError, match='SHA-256'):
         gateway.upload_file(
             managed_name='file.txt',
@@ -775,14 +779,13 @@ def test_upload_file_rejects_invalid_inputs(
         gateway.upload_file(
             managed_name='file.txt',
             expected_size=10,
-            expected_sha256='g' * 64,  # non-hex
+            expected_sha256='g' * 64,
             name='file.txt',
             mime_type='text/plain',
             parent_id=None,
             files=managed_store,
         )
 
-    # Invalid parent_id
     with pytest.raises(DriveInputError, match='[Pp]arent'):
         gateway.upload_file(
             managed_name='file.txt',
@@ -839,7 +842,6 @@ def test_upload_file_handles_provider_errors(
         uploader_factory=FakeUploader,
     )
 
-    # 401
     fake_service.files_endpoint.queue(
         'create', FakeRequest(error=_http_error(401, 'auth'))
     )
@@ -856,7 +858,6 @@ def test_upload_file_handles_provider_errors(
             files=managed_store,
         )
 
-    # 403
     fake_service.files_endpoint.queue(
         'create',
         FakeRequest(error=_http_error(403, 'appNotAuthorizedToFile')),
@@ -875,7 +876,6 @@ def test_upload_file_handles_provider_errors(
             files=managed_store,
         )
 
-    # 404
     fake_service.files_endpoint.queue(
         'create', FakeRequest(error=_http_error(404, 'notFound'))
     )
@@ -892,7 +892,6 @@ def test_upload_file_handles_provider_errors(
             files=managed_store,
         )
 
-    # TransportError
     fake_service.files_endpoint.queue(
         'create', FakeRequest(error=TransportError('Timeout'))
     )

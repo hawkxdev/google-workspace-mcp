@@ -1,4 +1,4 @@
-"""Tests for fail-closed audit propagation."""
+"""Audit propagation tests."""
 
 import asyncio
 import base64
@@ -38,6 +38,7 @@ CODE_CHALLENGE = (
 
 @pytest.fixture
 def service_config(tmp_path: Path) -> ServiceConfig:
+    """Provide service configuration."""
     state_dir = tmp_path / 'state'
     state_dir.mkdir(mode=0o700, parents=True)
     return ServiceConfig(
@@ -66,6 +67,7 @@ def oauth_state(
     service_config: ServiceConfig,
     tmp_path: Path,
 ) -> Iterator[OAuthState]:
+    """Provide OAuth state."""
     download_dir = tmp_path / 'downloads'
     download_dir.mkdir(mode=0o700, parents=True)
     with OAuthState(
@@ -78,6 +80,7 @@ def oauth_state(
 
 
 def _failing_audit_writer(record: dict[str, object]) -> None:
+    """Simulate audit failure."""
     raise AuditError('Failed to record audit event')
 
 
@@ -96,6 +99,7 @@ def test_oauth_refresh_failure_propagates_audit_error(
     )
 
     async def _run() -> None:
+        """Run nested operation."""
         scope = {
             'type': 'http',
             'method': 'POST',
@@ -112,6 +116,7 @@ def test_oauth_refresh_failure_propagates_audit_error(
         request = Request(scope)
 
         async def _receive() -> dict[str, object]:
+            """Receive test message."""
             return {'type': 'http.request', 'body': body, 'more_body': False}
 
         request._receive = _receive  # type: ignore[method-assign]
@@ -151,6 +156,7 @@ def test_oauth_refresh_rotation_propagates_audit_error(
     )
 
     async def _run() -> None:
+        """Run nested operation."""
         scope = {
             'type': 'http',
             'method': 'POST',
@@ -167,6 +173,7 @@ def test_oauth_refresh_rotation_propagates_audit_error(
         request = Request(scope)
 
         async def _receive() -> dict[str, object]:
+            """Receive test message."""
             return {'type': 'http.request', 'body': body, 'more_body': False}
 
         request._receive = _receive  # type: ignore[method-assign]
@@ -183,6 +190,7 @@ def test_oauth_write_audit_runs_off_event_loop(
     caller_threads: list[threading.Thread] = []
 
     def _threaded_audit_writer(record: dict[str, object]) -> None:
+        """Run threaded audit."""
         caller_threads.append(threading.current_thread())
 
     endpoints = OAuthEndpoints(
@@ -194,6 +202,7 @@ def test_oauth_write_audit_runs_off_event_loop(
     )
 
     async def _run() -> None:
+        """Run nested operation."""
         main_thread = threading.current_thread()
         await endpoints._write_audit({'test': 'event'})
         assert len(caller_threads) == 1
@@ -213,6 +222,7 @@ def test_principal_propagates_to_sync_handler(
     )
 
     def sync_probe(_: Request) -> JSONResponse:
+        """Run synchronous probe."""
         ctx = current_request_context()
         assert ctx is not None
         return JSONResponse(

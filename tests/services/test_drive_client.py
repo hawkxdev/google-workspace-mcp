@@ -43,11 +43,13 @@ class FakeRequest:
     def __init__(
         self, value: Any = None, error: Exception | None = None
     ) -> None:
+        """Initialize test double."""
         self.value = value
         self.error = error
         self.retries: list[int] = []
 
     def execute(self, *, num_retries: int = 0) -> Any:
+        """Execute prepared resource."""
         self.retries.append(num_retries)
         if self.error is not None:
             raise self.error
@@ -55,16 +57,19 @@ class FakeRequest:
 
 
 class FakeFilesEndpoint:
-    """Record Drive files endpoint calls."""
+    """Record endpoint calls."""
 
     def __init__(self) -> None:
+        """Initialize test double."""
         self.responses: dict[str, deque[Any]] = defaultdict(deque)
         self.calls: list[tuple[str, dict[str, Any], FakeRequest]] = []
 
     def queue(self, method: str, *values: Any) -> None:
+        """Queue provider resource."""
         self.responses[method].extend(values)
 
     def _call(self, method: str, kwargs: dict[str, Any]) -> FakeRequest:
+        """Record provider call."""
         if not self.responses[method]:
             raise AssertionError(f'No response queued for files().{method}()')
         value = self.responses[method].popleft()
@@ -75,9 +80,11 @@ class FakeFilesEndpoint:
         return request
 
     def list(self, **kwargs: Any) -> FakeRequest:
+        """List fake list."""
         return self._call('list', kwargs)
 
     def get(self, **kwargs: Any) -> FakeRequest:
+        """Get fake get."""
         return self._call('get', kwargs)
 
 
@@ -85,9 +92,11 @@ class FakeDriveService:
     """Expose fake Drive endpoints."""
 
     def __init__(self) -> None:
+        """Initialize test double."""
         self.files_endpoint = FakeFilesEndpoint()
 
     def files(self) -> FakeFilesEndpoint:
+        """Return files resource."""
         return self.files_endpoint
 
 
@@ -95,6 +104,7 @@ class FakeStore(GoogleCredentialStore):
     """Return Drive test credentials."""
 
     def __init__(self, fail: bool = False) -> None:
+        """Initialize test double."""
         self.calls = 0
         self.fail = fail
         self.service_name = 'drive'
@@ -108,6 +118,7 @@ class FakeStore(GoogleCredentialStore):
         )
 
     def refresh(self, request: Any = None) -> GoogleCredentials:
+        """Refresh fake resource."""
         self.calls += 1
         if self.fail:
             raise RuntimeError('Store refresh failed')
@@ -115,6 +126,7 @@ class FakeStore(GoogleCredentialStore):
 
 
 def _valid_file_payload(file_id: str = 'file_123') -> dict[str, Any]:
+    """Build valid file payload."""
     return {
         'id': file_id,
         'name': 'Test Document.docx',
@@ -142,6 +154,7 @@ def _valid_file_payload(file_id: str = 'file_123') -> dict[str, Any]:
 def _make_http_error(
     status: int, reason: str | None = None, message: str = 'Error'
 ) -> HttpError:
+    """Build HTTP error."""
     body: dict[str, Any] = {
         'error': {
             'code': status,
@@ -161,6 +174,7 @@ def test_gateway_initialization_and_service_builder() -> None:
     builder_called = False
 
     def custom_builder(creds: GoogleCredentials) -> Any:
+        """Build custom service."""
         nonlocal builder_called
         builder_called = True
         assert creds.token == 'drive-test-token'
@@ -283,13 +297,11 @@ def test_search_files_page_size_bounding() -> None:
     service.files_endpoint.queue('list', {'files': []})
     gateway = DriveGateway(store, service_builder=lambda _: service)
 
-    # Oversized page_size clamped to MAX_DRIVE_PAGE_SIZE (50)
     gateway.search_files(DriveSearchFilters(), page_size=100)
     assert (
         service.files_endpoint.calls[0][1]['pageSize'] == MAX_DRIVE_PAGE_SIZE
     )
 
-    # Non-positive page_size clamped to 1
     gateway.search_files(DriveSearchFilters(), page_size=0)
     assert service.files_endpoint.calls[1][1]['pageSize'] == 1
 
@@ -478,7 +490,7 @@ def test_strict_parsing_non_string_text_field() -> None:
     service = FakeDriveService()
     store = FakeStore()
     payload = _valid_file_payload()
-    payload['name'] = 12345  # Not a str
+    payload['name'] = 12345
     service.files_endpoint.queue('get', payload)
     gateway = DriveGateway(store, service_builder=lambda _: service)
 
@@ -582,7 +594,7 @@ def test_strict_parsing_non_bool_trashed() -> None:
     service = FakeDriveService()
     store = FakeStore()
     payload = _valid_file_payload()
-    payload['trashed'] = 'true'  # String instead of bool
+    payload['trashed'] = 'true'
     service.files_endpoint.queue('get', payload)
     gateway = DriveGateway(store, service_builder=lambda _: service)
 

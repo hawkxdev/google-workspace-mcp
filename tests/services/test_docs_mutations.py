@@ -60,7 +60,7 @@ def emoji_document() -> dict[str, Any]:
     return document([tab('tab-1', [paragraph(1, f'A{EMOJI}B\n')])])
 
 
-# Insert
+# === Insert ===
 
 
 def test_insert_sends_required_revision(
@@ -229,7 +229,7 @@ def test_missing_next_revision_fails_closed(
         )
 
 
-# Delete
+# === Delete ===
 
 
 def test_delete_range_uses_tab_scoped_range(
@@ -304,7 +304,7 @@ def test_delete_range_rejects_stale_revision(
     assert fake_service.calls_for('batchUpdate') == []
 
 
-# Create
+# === Create ===
 
 
 def test_create_document_sends_only_title(
@@ -358,7 +358,7 @@ def test_create_document_writes_without_outer_retry(
     assert fake_service.documents_endpoint.calls[0][2].retries == [0]
 
 
-# Replace
+# === Replace ===
 
 
 def test_replace_text_sends_tab_criteria_and_revision(

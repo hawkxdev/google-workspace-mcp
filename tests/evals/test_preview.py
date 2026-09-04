@@ -37,7 +37,6 @@ class ExecutionTrapHttp:
 
 
 def test_preview_contains_every_planned_write() -> None:
-    """List complete five-service preview."""
     preview = build_preview().document
 
     operation_ids = tuple(
@@ -60,11 +59,10 @@ def test_preview_contains_every_planned_write() -> None:
 
 
 def test_preview_never_executes_google_request() -> None:
-    """Prove preview performs zero writes."""
     transport = ExecutionTrapHttp()
 
     def service_factory() -> GoogleServiceSet:
-        """Build clients with execution trap."""
+        """Build execution trap clients."""
         common = {
             'http': transport,
             'cache_discovery': False,
@@ -85,7 +83,6 @@ def test_preview_never_executes_google_request() -> None:
 
 
 def test_preview_redacts_private_owner_address() -> None:
-    """Hide account address from preview."""
     bindings = make_bindings(
         state=BindingState.PLANNED,
         logical_refs=frozenset(),
@@ -101,7 +98,6 @@ def test_preview_redacts_private_owner_address() -> None:
 
 
 def test_partial_state_refuses_application() -> None:
-    """Refuse unsafe partial application."""
     bindings = make_bindings(
         logical_refs=frozenset({'drive_fixture_folder'}),
         applied_operations=frozenset({'drive.create.folder'}),
@@ -127,7 +123,6 @@ def test_partial_state_refuses_application() -> None:
 
 
 def test_partial_operation_output_is_blocked() -> None:
-    """Flag incomplete multi-output operation."""
     bindings = make_bindings(
         logical_refs=frozenset({'gmail_draft_cobalt'}),
         applied_operations=frozenset(),
@@ -142,7 +137,6 @@ def test_partial_operation_output_is_blocked() -> None:
 
 
 def test_complete_applied_registry_has_no_remaining_writes() -> None:
-    """Return empty completed preview."""
     preview = build_preview(make_bindings()).document
 
     assert preview.operation_count == 0
@@ -152,7 +146,6 @@ def test_complete_applied_registry_has_no_remaining_writes() -> None:
 
 
 def test_confirmation_requires_exact_preview_digest() -> None:
-    """Bind confirmation to preview digest."""
     preview = build_preview()
     confirmation = ApplicationConfirmation(
         fixture_version='stage12-v1',
@@ -168,7 +161,6 @@ def test_confirmation_requires_exact_preview_digest() -> None:
 
 
 def test_confirmation_returns_requests_without_execution() -> None:
-    """Expose confirmed request plan."""
     preview = build_preview()
     confirmation = ApplicationConfirmation(
         fixture_version='stage12-v1',

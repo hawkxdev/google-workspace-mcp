@@ -526,7 +526,6 @@ def test_read_range_enforces_exact_mode_pairing() -> None:
     store = FakeStore()
     gateway = SheetsGateway(store)
 
-    # FORMATTED forbids date_time_mode
     with pytest.raises(SheetsInputError, match='date_time_mode'):
         gateway.read_range(
             'sheet-123',
@@ -535,7 +534,6 @@ def test_read_range_enforces_exact_mode_pairing() -> None:
             date_time_mode=SheetsDateTimeMode.SERIAL_NUMBER,
         )
 
-    # UNFORMATTED requires date_time_mode
     with pytest.raises(SheetsInputError, match='date_time_mode is required'):
         gateway.read_range(
             'sheet-123',
@@ -544,7 +542,6 @@ def test_read_range_enforces_exact_mode_pairing() -> None:
             date_time_mode=None,
         )
 
-    # FORMULA requires date_time_mode
     with pytest.raises(SheetsInputError, match='date_time_mode is required'):
         gateway.read_range(
             'sheet-123',
@@ -633,7 +630,6 @@ def test_batch_read_ranges_validates_bounds_before_refresh() -> None:
     store = FakeStore()
     gateway = SheetsGateway(store)
 
-    # Reject str or bytes passed as ranges
     with pytest.raises(SheetsInputError, match='sequence of range strings'):
         gateway.batch_read_ranges(
             'sheet-123',
@@ -647,13 +643,11 @@ def test_batch_read_ranges_validates_bounds_before_refresh() -> None:
             render_mode=SheetsRenderMode.FORMATTED,
         )
 
-    # Empty ranges
     with pytest.raises(SheetsInputError, match='At least one range'):
         gateway.batch_read_ranges(
             'sheet-123', (), render_mode=SheetsRenderMode.FORMATTED
         )
 
-    # Exceeding MAX_SHEETS_RANGES
     excess_ranges = tuple(
         f'Sheet1!A{i}:B{i}' for i in range(MAX_SHEETS_RANGES + 1)
     )
@@ -664,7 +658,6 @@ def test_batch_read_ranges_validates_bounds_before_refresh() -> None:
             'sheet-123', excess_ranges, render_mode=SheetsRenderMode.FORMATTED
         )
 
-    # Invalid range in batch
     with pytest.raises(SheetsInputError, match='sheet qualified'):
         gateway.batch_read_ranges(
             'sheet-123',
@@ -672,7 +665,6 @@ def test_batch_read_ranges_validates_bounds_before_refresh() -> None:
             render_mode=SheetsRenderMode.FORMATTED,
         )
 
-    # date_time_mode with formatted
     with pytest.raises(SheetsInputError, match='date_time_mode'):
         gateway.batch_read_ranges(
             'sheet-123',
@@ -681,7 +673,6 @@ def test_batch_read_ranges_validates_bounds_before_refresh() -> None:
             date_time_mode=SheetsDateTimeMode.FORMATTED_STRING,
         )
 
-    # UNFORMATTED requires date_time_mode
     with pytest.raises(SheetsInputError, match='date_time_mode is required'):
         gateway.batch_read_ranges(
             'sheet-123',
@@ -747,7 +738,6 @@ def test_cell_scalar_validation() -> None:
     fake_service = FakeSheetsService()
     gateway = SheetsGateway(store, service_builder=lambda _: fake_service)
 
-    # Valid mixed scalar cells (None, bool, int, float, str)
     fake_service.spreadsheets().values().queue(
         'get',
         {
@@ -763,7 +753,6 @@ def test_cell_scalar_validation() -> None:
     )
     assert result.values == ((None, True, False, 42, 3.14, 'hello'),)
 
-    # Reject mapping cell
     fake_service.spreadsheets().values().queue(
         'get',
         {
@@ -779,7 +768,6 @@ def test_cell_scalar_validation() -> None:
             'sheet-123', 'Sheet1!A1:A1', render_mode=SheetsRenderMode.FORMATTED
         )
 
-    # Reject nested list cell
     fake_service.spreadsheets().values().queue(
         'get',
         {
@@ -795,7 +783,6 @@ def test_cell_scalar_validation() -> None:
             'sheet-123', 'Sheet1!A1:A1', render_mode=SheetsRenderMode.FORMATTED
         )
 
-    # Reject NaN or Inf
     for non_finite in (float('nan'), float('inf'), float('-inf')):
         fake_service.spreadsheets().values().queue(
             'get',
@@ -814,7 +801,6 @@ def test_cell_scalar_validation() -> None:
                 render_mode=SheetsRenderMode.FORMATTED,
             )
 
-    # Reject oversized cell string
     oversized = 'X' * (MAX_SHEETS_TEXT_CHARS + 1)
     fake_service.spreadsheets().values().queue(
         'get',
@@ -831,7 +817,6 @@ def test_cell_scalar_validation() -> None:
             'sheet-123', 'Sheet1!A1:A1', render_mode=SheetsRenderMode.FORMATTED
         )
 
-    # Reject null byte in cell string
     fake_service.spreadsheets().values().queue(
         'get',
         {

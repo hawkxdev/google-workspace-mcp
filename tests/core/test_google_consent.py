@@ -289,10 +289,10 @@ def test_library_output_never_reaches_stdout(
     client_secrets: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class ChattyFlow(FakeFlow):
-        """Print an authorization URL like the library."""
+        """Model authorization flow."""
 
         def run_local_server(self, **kwargs: Any) -> FakeLibraryCredentials:
-            """Print prompt then return credentials."""
+            """Simulate local consent flow."""
             print('Please visit this URL to authorize: https://accounts...')
             return super().run_local_server(**kwargs)
 

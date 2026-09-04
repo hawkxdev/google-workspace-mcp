@@ -198,6 +198,7 @@ async def test_download_tool_binds_descriptor_size_before_storage() -> None:
 
         @property
         def directory(self) -> Path:
+            """Provide test directory."""
             return Path.cwd()
 
         def publish_bytes(self, *args: object) -> object:
@@ -241,7 +242,10 @@ async def test_download_tool_decodes_and_publishes_attachment(
     tmp_path: Path,
 ) -> None:
     class SuccessGateway(UnusedGateway):
+        """Provide fake gateway."""
+
         def get_message(self, message_id: str) -> MessageDetail:
+            """Get fake message."""
             return MessageDetail(
                 message_id=message_id,
                 thread_id='t1',
@@ -257,6 +261,7 @@ async def test_download_tool_decodes_and_publishes_attachment(
         def get_attachment(
             self, message_id: str, attachment_id: str
         ) -> AttachmentPayload:
+            """Get fake attachment."""
             import base64
 
             del message_id, attachment_id

@@ -439,7 +439,7 @@ def test_zero_block_cap_projects_nothing() -> None:
 
 
 def header_document(body_text: str, header_text: str) -> dict[str, Any]:
-    """Build document with one header."""
+    """Build document header."""
     return {
         'documentId': 'document-1',
         'title': 'Doc',
@@ -517,12 +517,14 @@ def test_narrow_tab_tree_still_reads_on_the_read_path() -> None:
 
 
 def nested_tables_document() -> dict[str, Any]:
-    """Build one nested table document."""
+    """Build nested table document."""
 
     def cell(start: int, end: int, content: list[Any]) -> dict[str, Any]:
+        """Build nested cell."""
         return {'startIndex': start, 'endIndex': end, 'content': content}
 
     def tbl(start: int, end: int, cells: list[Any]) -> dict[str, Any]:
+        """Build nested table."""
         return {
             'startIndex': start,
             'endIndex': end,

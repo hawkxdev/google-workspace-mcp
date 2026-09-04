@@ -1,4 +1,4 @@
-"""Test Drive file mutations: versioned update, move, and copy."""
+"""Drive mutation behavior tests."""
 
 from __future__ import annotations
 
@@ -51,11 +51,13 @@ class FakeRequest:
         value: Any = None,
         error: Exception | None = None,
     ) -> None:
+        """Initialize test double."""
         self.value = value
         self.error = error
         self.retries: list[int] = []
 
     def execute(self, *, num_retries: int = 0) -> Any:
+        """Execute prepared resource."""
         self.retries.append(num_retries)
         if self.error is not None:
             raise self.error
@@ -63,16 +65,19 @@ class FakeRequest:
 
 
 class FakeFilesEndpoint:
-    """Record Drive files endpoint calls."""
+    """Record endpoint calls."""
 
     def __init__(self) -> None:
+        """Initialize test double."""
         self.responses: dict[str, deque[Any]] = defaultdict(deque)
         self.calls: list[tuple[str, dict[str, Any], FakeRequest]] = []
 
     def queue(self, method: str, *values: Any) -> None:
+        """Queue provider resource."""
         self.responses[method].extend(values)
 
     def _call(self, method: str, kwargs: dict[str, Any]) -> FakeRequest:
+        """Record provider call."""
         if not self.responses[method]:
             raise AssertionError(
                 f'Unexpected {method} call with kwargs={kwargs}'
@@ -86,32 +91,39 @@ class FakeFilesEndpoint:
         return req
 
     def get(self, **kwargs: Any) -> FakeRequest:
+        """Get fake get."""
         return self._call('get', kwargs)
 
     def update(self, **kwargs: Any) -> FakeRequest:
+        """Update fake update."""
         return self._call('update', kwargs)
 
     def copy(self, **kwargs: Any) -> FakeRequest:
+        """Copy fake copy."""
         return self._call('copy', kwargs)
 
 
 class FakeDriveService:
-    """Provide fake Drive API service."""
+    """Provide test double."""
 
     def __init__(self) -> None:
+        """Initialize test double."""
         self.files_endpoint = FakeFilesEndpoint()
 
     def files(self) -> FakeFilesEndpoint:
+        """Return files resource."""
         return self.files_endpoint
 
 
 class FakeStore(GoogleCredentialStore):
-    """Provide fake credential store for testing."""
+    """Provide test double."""
 
     def __init__(self) -> None:
+        """Initialize test double."""
         pass
 
     def refresh(self, request: Any = None) -> GoogleCredentials:
+        """Refresh fake resource."""
         return GoogleCredentials(token='fake_token')
 
 
@@ -125,6 +137,7 @@ class FakeUploader:
         resumable: bool = False,
         chunksize: int | None = None,
     ) -> None:
+        """Initialize test double."""
         self.fd = fd
         self.mimetype = mimetype
         self.resumable = resumable
@@ -134,6 +147,7 @@ class FakeUploader:
 
 @pytest.fixture
 def managed_store(tmp_path: Path) -> ManagedFileStore:
+    """Provide managed store."""
     return ManagedFileStore(directory=tmp_path)
 
 
@@ -145,6 +159,7 @@ def _valid_file_payload(
     mime_type: str = 'application/pdf',
     size: int = 1024,
 ) -> dict[str, Any]:
+    """Build valid file payload."""
     return {
         'id': file_id,
         'name': name,
@@ -165,6 +180,7 @@ def _valid_file_payload(
 
 
 def _http_error(status: int, reason: str = 'unknown') -> HttpError:
+    """Build HTTP error."""
     resp = httplib2.Response({'status': str(status)})
     content = json.dumps(
         {
@@ -184,6 +200,7 @@ def _seed_managed_file(
     content: bytes = b'%PDF-1.4 test payload',
     mime_type: str = 'application/pdf',
 ) -> tuple[str, int, str]:
+    """Seed managed file."""
     digest = hashlib.sha256(content).hexdigest()
     with store.writer(
         namespace='drive',

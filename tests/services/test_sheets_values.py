@@ -412,9 +412,8 @@ def test_update_range_accepts_valid_scalars(
 def test_update_range_cell_limit_boundary(
     fake_service: FakeSheetsService, gateway: SheetsGateway, store: FakeStore
 ) -> None:
-    # 10,000 cells is allowed
     row_100 = tuple(range(100))
-    grid_10k = tuple(row_100 for _ in range(100))  # 100x100 = 10,000 cells
+    grid_10k = tuple(row_100 for _ in range(100))
     fake_service.spreadsheets().values().queue(
         'update',
         {
@@ -433,7 +432,6 @@ def test_update_range_cell_limit_boundary(
     )
     assert store.calls == 1
 
-    # 10001 cells rejected preauth
     grid_10001 = grid_10k + ((1,),)
     with pytest.raises(SheetsInputError, match='cell limit exceeded'):
         gateway.update_range(
@@ -448,7 +446,6 @@ def test_update_range_cell_limit_boundary(
 def test_update_range_payload_limit_boundary(
     fake_service: FakeSheetsService, gateway: SheetsGateway, store: FakeStore
 ) -> None:
-    # 100 rows of 1 large string cell = ~1.1 MiB payload
     large_string = 'A' * 12_000
     rows_large = tuple((large_string,) for _ in range(100))
     with pytest.raises(SheetsInputError, match='payload limit exceeded'):

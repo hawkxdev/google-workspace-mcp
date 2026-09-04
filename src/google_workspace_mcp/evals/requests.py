@@ -41,6 +41,7 @@ class RequestLike(Protocol):
     uri: str
     method: str
     body: str | bytes | None
+    body_size: int
 
     def execute(self, **kwargs: Any) -> Any:
         """Execute one provider request."""

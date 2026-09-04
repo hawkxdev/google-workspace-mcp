@@ -516,7 +516,7 @@ def test_connected_owner_recheck_detects_same_inode_change(
     def change_owner_after_preflight(
         state: OAuthState, expected_identity: tuple[int, int]
     ) -> None:
-        """Change owner after immutable read."""
+        """Change owner after preflight."""
         original_preflight(state, expected_identity)
         with sqlite3.connect(state.path) as connection:
             connection.execute(

@@ -7,7 +7,7 @@ import pytest
 
 from google_workspace_mcp.common.config import ServiceConfig
 
-# Shared configuration setup
+# === Shared configuration setup ===
 
 SERVICES_AND_PORTS = {
     'gmail': 8431,
@@ -98,7 +98,7 @@ def clear_service_config_environment(
         )
 
 
-# Valid configuration cases
+# === Valid configuration cases ===
 class TestValidConfiguration:
     """Valid configuration cases."""
 
@@ -282,7 +282,7 @@ class TestValidConfiguration:
             ServiceConfig.from_env('gmail')
 
 
-# Invalid configuration cases
+# === Invalid configuration cases ===
 class TestInvalidConfiguration:
     """Invalid configuration cases."""
 
@@ -374,7 +374,7 @@ class TestInvalidConfiguration:
             service_config(public_url=issuer, mcp_path=mcp_path).resource_url
 
 
-# Configuration boundary cases
+# === Configuration boundary cases ===
 class TestBoundaryConfiguration:
     """Boundary configuration cases."""
 

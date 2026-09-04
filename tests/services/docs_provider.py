@@ -17,7 +17,7 @@ from google_workspace_mcp.google_auth import (
 EMOJI = '\U0001f604'
 
 
-# Provider document builders
+# === Provider document builders ===
 
 
 def utf16_units(value: str) -> int:
@@ -254,7 +254,7 @@ def nested_table_document(depth: int) -> dict[str, Any]:
     return document([tab('tab-1', [node])])
 
 
-# Provider service fakes
+# === Provider service fakes ===
 
 
 class FakeRequest:

@@ -22,13 +22,16 @@ class ExtraExtension(Extension):
     """Register one external tool."""
 
     def register_tools(self, registrar: ToolRegistrar) -> None:
+        """Register test tools."""
 
         @registrar.tool(name='external_tool')
         def external_tool() -> str:
+            """Provide external test tool."""
             return 'external'
 
 
 def _config(tmp_path: Path) -> ServiceConfig:
+    """Provide service configuration."""
     root = tmp_path / 'drive'
     root.mkdir(mode=0o700)
     downloads = root / 'downloads'
@@ -78,7 +81,10 @@ def test_builtin_before_caller_extension_order(tmp_path: Path) -> None:
     registered_order: list[str] = []
 
     class OrderTrackingExtension(Extension):
+        """Model test extension."""
+
         def register_tools(self, registrar: ToolRegistrar) -> None:
+            """Register test tools."""
             registered_order.extend(
                 tool.name
                 for tool in registrar._server._tool_manager.list_tools()
@@ -86,6 +92,7 @@ def test_builtin_before_caller_extension_order(tmp_path: Path) -> None:
 
             @registrar.tool(name='custom_tail_tool')
             def custom_tail_tool() -> str:
+                """Provide trailing test tool."""
                 return 'tail'
 
     app, server, state = create_drive_app(

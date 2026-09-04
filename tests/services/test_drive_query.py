@@ -1,3 +1,5 @@
+"""Drive query behavior tests."""
+
 from __future__ import annotations
 
 import pytest
@@ -252,7 +254,6 @@ def test_export_formats_matrix_completeness() -> None:
         'presentationml.presentation'
     )
 
-    # Docs
     docs_targets = EXPORT_FORMATS[GOOGLE_DOC_MIME]
     assert docs_targets[DriveExportFormat.PDF].mime_type == 'application/pdf'
     assert docs_targets[DriveExportFormat.PDF].extension == '.pdf'
@@ -263,7 +264,6 @@ def test_export_formats_matrix_completeness() -> None:
     assert docs_targets[DriveExportFormat.HTML].mime_type == 'application/zip'
     assert docs_targets[DriveExportFormat.HTML].extension == '.zip'
 
-    # Sheets
     sheets_targets = EXPORT_FORMATS[GOOGLE_SHEET_MIME]
     assert sheets_targets[DriveExportFormat.PDF].mime_type == 'application/pdf'
     assert sheets_targets[DriveExportFormat.PDF].extension == '.pdf'
@@ -272,7 +272,6 @@ def test_export_formats_matrix_completeness() -> None:
     assert sheets_targets[DriveExportFormat.CSV].mime_type == 'text/csv'
     assert sheets_targets[DriveExportFormat.CSV].extension == '.csv'
 
-    # Slides
     slides_targets = EXPORT_FORMATS[GOOGLE_SLIDE_MIME]
     assert slides_targets[DriveExportFormat.PDF].mime_type == 'application/pdf'
     assert slides_targets[DriveExportFormat.PDF].extension == '.pdf'
@@ -281,7 +280,6 @@ def test_export_formats_matrix_completeness() -> None:
     assert slides_targets[DriveExportFormat.TXT].mime_type == 'text/plain'
     assert slides_targets[DriveExportFormat.TXT].extension == '.txt'
 
-    # Drawings
     drawings_targets = EXPORT_FORMATS[GOOGLE_DRAWING_MIME]
     assert (
         drawings_targets[DriveExportFormat.PDF].mime_type == 'application/pdf'

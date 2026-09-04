@@ -1,3 +1,5 @@
+"""Factory isolation behavior tests."""
+
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -47,6 +49,7 @@ def _setup_service_env(
     service: str,
     port: str,
 ) -> None:
+    """Configure service environment."""
     d = root / service.lower()
     d.mkdir(parents=True, mode=0o700)
     dl = d / 'dl'
@@ -175,12 +178,16 @@ def test_create_service_app_with_extensions(tmp_path: Path) -> None:
     )
 
     class CustomExtension(Extension):
+        """Model test extension."""
+
         def __init__(self) -> None:
+            """Initialize test double."""
             self.tools_registered = False
             self.routes_registered = False
             self.shut_down = False
 
         def register_tools(self, registrar: ToolRegistrar) -> None:
+            """Register test tools."""
             self.tools_registered = True
 
             @registrar.tool(
@@ -189,6 +196,7 @@ def test_create_service_app_with_extensions(tmp_path: Path) -> None:
                 available_to_readonly=True,
             )
             def custom_ext_tool() -> str:
+                """Provide extension tool."""
                 return 'ext_ok'
 
             @registrar.tool(
@@ -196,12 +204,15 @@ def test_create_service_app_with_extensions(tmp_path: Path) -> None:
                 required_capability='mail.write',
             )
             def custom_write_tool() -> str:
+                """Provide extension write tool."""
                 return 'write_ok'
 
         def register_routes(self, app: Any) -> None:
+            """Register test routes."""
             self.routes_registered = True
 
             async def ext_endpoint(_: Request) -> JSONResponse:
+                """Provide extension endpoint."""
                 return JSONResponse({'ext': 'ok'})
 
             app.routes.append(
@@ -209,6 +220,7 @@ def test_create_service_app_with_extensions(tmp_path: Path) -> None:
             )
 
         def shutdown(self) -> None:
+            """Stop test resource."""
             self.shut_down = True
 
     ext = CustomExtension()
@@ -231,6 +243,7 @@ def test_create_service_app_with_extensions(tmp_path: Path) -> None:
         )
 
         def _lookup(_: str) -> TokenMetadata:
+            """Resolve test capability."""
             return metadata
 
         state.lookup_access_token = _lookup  # type: ignore[method-assign]
@@ -321,12 +334,10 @@ def test_factory_app_lifespan_closes_oauth_state(tmp_path: Path) -> None:
         assert res.status_code == 200
         assert state._closed is False
 
-    # State unusable after lifespan
     assert state._closed is True
     with pytest.raises(sqlite3.ProgrammingError):
         state.table_names()
 
-    # Double close is safe
     state.close()
     assert state._closed is True
 
@@ -361,13 +372,17 @@ def test_factory_closes_state_on_tool_registration_failure(
     )
 
     class FailingExtension(Extension):
+        """Model test extension."""
+
         def register_tools(self, registrar: ToolRegistrar) -> None:
+            """Register test tools."""
             raise RuntimeError('tool registration boom')
 
     created_states: list[OAuthState] = []
     original_init = OAuthState.__init__
 
     def spy_init(self: OAuthState, *args: object, **kwargs: object) -> None:
+        """Record initialization call."""
         original_init(self, *args, **kwargs)  # type: ignore[arg-type]
         created_states.append(self)
 
@@ -410,8 +425,13 @@ def test_factory_closes_state_on_build_app_failure(
     )
 
     class ConflictingRouteExtension(Extension):
+        """Model test extension."""
+
         def register_routes(self, app: Any) -> None:
+            """Register test routes."""
+
             async def conflict_handler(_: Request) -> JSONResponse:
+                """Handle route conflict."""
                 return JSONResponse({'conflict': 'yes'})
 
             app.routes.append(
@@ -422,6 +442,7 @@ def test_factory_closes_state_on_build_app_failure(
     original_close = OAuthState.close
 
     def spy_close(self: OAuthState) -> None:
+        """Record close call."""
         closed_states.append(self)
         original_close(self)
 

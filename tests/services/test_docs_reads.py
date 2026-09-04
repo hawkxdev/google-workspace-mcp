@@ -217,7 +217,7 @@ def test_single_oversized_paragraph_is_clipped_to_cap(
 
 
 def empty_cell_table(start: int, count: int) -> dict[str, Any]:
-    """Build table of empty cells."""
+    """Build empty cell table."""
     cells = [
         {
             'startIndex': start + 1 + index,
@@ -244,7 +244,7 @@ def empty_cell_table(start: int, count: int) -> dict[str, Any]:
 
 
 def single_cell_rows_table(start: int, rows: int) -> dict[str, Any]:
-    """Build table of empty rows."""
+    """Build empty row table."""
     table_rows = [
         {
             'startIndex': start + 1 + index * 2,

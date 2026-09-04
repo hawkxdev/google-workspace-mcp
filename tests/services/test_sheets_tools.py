@@ -442,7 +442,6 @@ async def test_registers_exact_sheets_inventory() -> None:
 
     public = {tool.name: tool for tool in tools}
 
-    # Input properties and required checks
     read_range = public['sheets_read_range'].input_schema
     assert set(read_range['properties']) == {
         'spreadsheet_id',
@@ -600,7 +599,6 @@ def test_sheets_annotations_match_design() -> None:
         if tool.annotations is not None
     }
 
-    # Read tools
     for name in READONLY_SHEETS_TOOLS:
         ann = by_name[name]
         assert ann.read_only_hint is True
@@ -608,56 +606,48 @@ def test_sheets_annotations_match_design() -> None:
         assert ann.idempotent_hint is True
         assert ann.open_world_hint is True
 
-    # sheets_update_range
     ann = by_name['sheets_update_range']
     assert ann.read_only_hint is False
     assert ann.destructive_hint is False
     assert ann.idempotent_hint is True
     assert ann.open_world_hint is True
 
-    # sheets_append_rows mutation
     ann = by_name['sheets_append_rows']
     assert ann.read_only_hint is False
     assert ann.destructive_hint is False
     assert ann.idempotent_hint is False
     assert ann.open_world_hint is True
 
-    # sheets_batch_update_ranges
     ann = by_name['sheets_batch_update_ranges']
     assert ann.read_only_hint is False
     assert ann.destructive_hint is False
     assert ann.idempotent_hint is True
     assert ann.open_world_hint is True
 
-    # sheets_clear_ranges (destructive + idempotent)
     ann = by_name['sheets_clear_ranges']
     assert ann.read_only_hint is False
     assert ann.destructive_hint is True
     assert ann.idempotent_hint is True
     assert ann.open_world_hint is True
 
-    # sheets_create_spreadsheet mutation
     ann = by_name['sheets_create_spreadsheet']
     assert ann.read_only_hint is False
     assert ann.destructive_hint is False
     assert ann.idempotent_hint is False
     assert ann.open_world_hint is True
 
-    # sheets_add_sheet mutation
     ann = by_name['sheets_add_sheet']
     assert ann.read_only_hint is False
     assert ann.destructive_hint is False
     assert ann.idempotent_hint is False
     assert ann.open_world_hint is True
 
-    # sheets_rename_sheet (idempotent)
     ann = by_name['sheets_rename_sheet']
     assert ann.read_only_hint is False
     assert ann.destructive_hint is False
     assert ann.idempotent_hint is True
     assert ann.open_world_hint is True
 
-    # sheets_copy_sheet mutation
     ann = by_name['sheets_copy_sheet']
     assert ann.read_only_hint is False
     assert ann.destructive_hint is False
@@ -673,7 +663,7 @@ async def test_sheets_tools_forward_to_gateway() -> None:
 
     token = _set_full_principal()
     try:
-        # 1. get_spreadsheet
+        # Step 1: get_spreadsheet
         result = await server.call_tool(
             'sheets_get_spreadsheet', {'spreadsheet_id': 'book-1'}
         )
@@ -682,7 +672,7 @@ async def test_sheets_tools_forward_to_gateway() -> None:
         assert result.structured_content['sheets'][0]['sheet_id'] == 0
         assert gateway.calls[-1] == ('get_spreadsheet', ('book-1',), {})
 
-        # 2. read_range
+        # Step 2: read_range
         read_res = await server.call_tool(
             'sheets_read_range',
             {
@@ -702,7 +692,7 @@ async def test_sheets_tools_forward_to_gateway() -> None:
             },
         )
 
-        # 3. batch_read_ranges
+        # Step 3: batch_read_ranges
         batch_res = await server.call_tool(
             'sheets_batch_read_ranges',
             {
@@ -721,7 +711,7 @@ async def test_sheets_tools_forward_to_gateway() -> None:
             },
         )
 
-        # 4. update_range
+        # Step 4: update_range
         update_res = await server.call_tool(
             'sheets_update_range',
             {
@@ -738,7 +728,7 @@ async def test_sheets_tools_forward_to_gateway() -> None:
             {'input_mode': SheetsInputMode.USER_ENTERED},
         )
 
-        # 5. append_rows
+        # Step 5: append_rows
         append_res = await server.call_tool(
             'sheets_append_rows',
             {
@@ -759,7 +749,7 @@ async def test_sheets_tools_forward_to_gateway() -> None:
             },
         )
 
-        # 6. batch_update_ranges
+        # Step 6: batch_update_ranges
         batch_up_res = await server.call_tool(
             'sheets_batch_update_ranges',
             {
@@ -775,7 +765,7 @@ async def test_sheets_tools_forward_to_gateway() -> None:
         assert gateway.calls[-1][1][0] == 'book-1'
         assert gateway.calls[-1][2] == {'input_mode': SheetsInputMode.RAW}
 
-        # 7. clear_ranges
+        # Step 7: clear_ranges
         clear_res = await server.call_tool(
             'sheets_clear_ranges',
             {
@@ -792,7 +782,7 @@ async def test_sheets_tools_forward_to_gateway() -> None:
             {},
         )
 
-        # 8. create_spreadsheet
+        # Step 8: create_spreadsheet
         create_res = await server.call_tool(
             'sheets_create_spreadsheet',
             {
@@ -808,7 +798,7 @@ async def test_sheets_tools_forward_to_gateway() -> None:
             {'locale': 'en_US', 'time_zone': 'America/New_York'},
         )
 
-        # 9. add_sheet
+        # Step 9: add_sheet
         add_res = await server.call_tool(
             'sheets_add_sheet',
             {
@@ -825,7 +815,7 @@ async def test_sheets_tools_forward_to_gateway() -> None:
             {'row_count': 500, 'column_count': 10},
         )
 
-        # 10. rename_sheet
+        # Step 10: rename_sheet
         rename_res = await server.call_tool(
             'sheets_rename_sheet',
             {
@@ -841,7 +831,7 @@ async def test_sheets_tools_forward_to_gateway() -> None:
             {},
         )
 
-        # 11. copy_sheet
+        # Step 11: copy_sheet
         copy_res = await server.call_tool(
             'sheets_copy_sheet',
             {
@@ -871,21 +861,18 @@ async def test_sheets_tools_reject_missing_required_modes() -> None:
 
     token = _set_full_principal()
     try:
-        # read_range missing render_mode
         with pytest.raises(Exception):
             await server.call_tool(
                 'sheets_read_range',
                 {'spreadsheet_id': 'book-1', 'range_name': 'Sheet1!A1'},
             )
 
-        # batch_read_ranges missing render_mode
         with pytest.raises(Exception):
             await server.call_tool(
                 'sheets_batch_read_ranges',
                 {'spreadsheet_id': 'book-1', 'ranges': ['Sheet1!A1']},
             )
 
-        # update_range missing input_mode
         with pytest.raises(Exception):
             await server.call_tool(
                 'sheets_update_range',
@@ -896,7 +883,6 @@ async def test_sheets_tools_reject_missing_required_modes() -> None:
                 },
             )
 
-        # append_rows missing input_mode
         with pytest.raises(Exception):
             await server.call_tool(
                 'sheets_append_rows',
@@ -908,7 +894,6 @@ async def test_sheets_tools_reject_missing_required_modes() -> None:
                 },
             )
 
-        # append_rows missing insert_mode
         with pytest.raises(Exception):
             await server.call_tool(
                 'sheets_append_rows',
@@ -920,7 +905,6 @@ async def test_sheets_tools_reject_missing_required_modes() -> None:
                 },
             )
 
-        # batch_update_ranges missing input_mode
         with pytest.raises(Exception):
             await server.call_tool(
                 'sheets_batch_update_ranges',

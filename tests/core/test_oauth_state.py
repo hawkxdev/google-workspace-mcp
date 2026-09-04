@@ -43,7 +43,7 @@ CHALLENGE = (
     .decode()
 )
 
-# Shared OAuth fixtures
+# === Shared OAuth fixtures ===
 
 
 @pytest.fixture
@@ -92,7 +92,7 @@ def secrets_equal(left: str, right: str) -> bool:
     return hmac.compare_digest(left, right)
 
 
-# OAuth test helpers
+# === OAuth test helpers ===
 def _register(state: OAuthState) -> tuple[str, str]:
     """Register test client."""
     issued = state.register_client([REDIRECT])
@@ -143,7 +143,7 @@ def _db_text(path: Path) -> str:
     return b''.join(chunks).decode('utf-8', errors='ignore')
 
 
-# OAuth lifecycle cases
+# === OAuth lifecycle cases ===
 def test_readonly_policy_exposes_exactly_the_injected_capability_set():
     assert _capabilities_for_policy(MCP_READONLY_V1, READONLY) == READONLY
     assert _capabilities_for_policy(LEGACY_FULL, READONLY) == ()
@@ -463,7 +463,7 @@ def test_client_revoke_cascades_codes_and_tokens_across_reopen(state_paths):
     reopened.close()
 
 
-# Legacy migration cases
+# === Legacy migration cases ===
 def test_legacy_migration_is_allowlisted_one_way_and_secret_free(state_paths):
     _, state_path, legacy_path = state_paths
     records = {
@@ -734,7 +734,7 @@ def test_migration_unlink_is_durable_before_cleanup_marker_clears(
     reopened.close()
 
 
-# Backup and security cases
+# === Backup and security cases ===
 def test_static_client_revoke_survives_restart(state_paths):
     state = _state(state_paths)
     client = state.ensure_static_client(

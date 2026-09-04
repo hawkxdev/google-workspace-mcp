@@ -1,4 +1,4 @@
-"""Test shared managed file store."""
+"""Managed file store tests."""
 
 from __future__ import annotations
 
@@ -157,6 +157,7 @@ def test_managed_store_cleans_failed_publish(
     calls = 0
 
     def failing_fsync(fd: int) -> None:
+        """Simulate fsync failure."""
         nonlocal calls
         calls += 1
         if calls == 2:

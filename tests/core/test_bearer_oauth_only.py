@@ -166,7 +166,7 @@ async def _asgi_request(
     authorization: str | None = None,
 ) -> tuple[int, bytes]:
     """Issue request in task."""
-    # 1. Build request scope
+    # Step 1: Build request scope
     headers = []
     if authorization is not None:
         headers.append((b'authorization', authorization.encode('ascii')))
@@ -185,7 +185,7 @@ async def _asgi_request(
         'server': ('mcp.example.test', 443),
         'state': {},
     }
-    # 2. Prepare ASGI channels
+    # Step 2: Prepare ASGI channels
     messages: list[Message] = []
     delivered = False
 
@@ -202,9 +202,9 @@ async def _asgi_request(
         """Capture one ASGI response."""
         messages.append(message)
 
-    # 3. Execute application
+    # Step 3: Execute application
     await app(scope, receive, send)
-    # 4. Collect response
+    # Step 4: Collect response
     status = next(
         message['status']
         for message in messages
@@ -630,7 +630,7 @@ async def test_token_lookup_does_not_block_event_loop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     token, _ = _issue_token(oauth_state)
-    # Slow token lookup
+    # Step: Slow token lookup
     original_lookup = oauth_state.lookup_access_token
 
     def slow_lookup(value: str):
@@ -655,7 +655,7 @@ async def test_token_lookup_does_not_block_event_loop(
         config=service_config,
         oauth_state=oauth_state,
     )
-    # Concurrent health probe
+    # Step: Concurrent health probe
     started = asyncio.get_running_loop().time()
     protected = asyncio.create_task(
         _asgi_request(
@@ -669,7 +669,7 @@ async def test_token_lookup_does_not_block_event_loop(
     health_status, _ = await _asgi_request(app, '/health')
     protected_status, _ = await protected
 
-    # Timing assertions
+    # Step: Timing assertions
     assert protected_status == 200
     assert health_status == 200
     assert wake_delay < 0.2

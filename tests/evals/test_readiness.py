@@ -44,12 +44,12 @@ class RecordingReadinessProbe:
         exact_marker: str,
         max_results: int,
     ) -> bool:
-        """Record one exact Gmail search."""
+        """Record exact Gmail search."""
         self.delivery_calls.append((exact_marker, max_results))
         return exact_marker != self.unavailable_marker
 
     def object_exists(self, binding: ObjectBinding) -> bool:
-        """Record one direct object read."""
+        """Record direct object read."""
         self.object_calls.append(binding.logical_ref)
         return True
 
@@ -111,7 +111,6 @@ class FakeGmail:
 def test_readiness_checks_every_binding_once(
     applied_bindings: FixtureBindings,
 ) -> None:
-    """Run one complete readiness pass."""
     probe = RecordingReadinessProbe()
 
     report = check_readiness(applied_bindings, probe)
@@ -129,7 +128,6 @@ def test_readiness_checks_every_binding_once(
 def test_missing_gmail_delivery_returns_not_ready_without_retry(
     applied_bindings: FixtureBindings,
 ) -> None:
-    """Refuse absent Gmail delivery."""
     probe = RecordingReadinessProbe(MARKER_MESSAGE_ALPHA_REPLY)
 
     report = check_readiness(applied_bindings, probe)
@@ -147,7 +145,6 @@ def test_missing_gmail_delivery_returns_not_ready_without_retry(
 
 
 def test_google_readiness_uses_one_exact_gmail_search() -> None:
-    """Build bounded exact Gmail request."""
     messages = FakeMessages()
     services = GoogleServiceSet(
         gmail=FakeGmail(messages),
@@ -177,7 +174,6 @@ def test_google_readiness_uses_one_exact_gmail_search() -> None:
 
 
 def test_readiness_refuses_planned_bindings() -> None:
-    """Reject readiness before application."""
     bindings = make_bindings(
         state=BindingState.PLANNED,
         logical_refs=frozenset(),
@@ -189,7 +185,6 @@ def test_readiness_refuses_planned_bindings() -> None:
 
 
 def test_missing_binding_is_not_probed() -> None:
-    """Report missing registry entry."""
     bindings = make_bindings(
         logical_refs=frozenset({'drive_fixture_folder'}),
         applied_operations=frozenset({'drive.create.folder'}),
@@ -207,7 +202,6 @@ def test_missing_binding_is_not_probed() -> None:
 def test_xml_authoring_requires_ready_state(
     applied_bindings: FixtureBindings,
 ) -> None:
-    """Gate XML on ready state."""
     with pytest.raises(ValueError, match='requires ready'):
         require_ready_for_xml(applied_bindings)
 

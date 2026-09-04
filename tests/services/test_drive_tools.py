@@ -73,22 +73,33 @@ FULL_ONLY_DESTRUCTIVE_TOOLS = {
 
 
 class UnusedGateway:
+    """Provide fake gateway."""
+
     def __getattr__(self, name: str) -> Any:
+        """Resolve fake attribute."""
+
         def operation(*_: object, **__: object) -> object:
+            """Build test operation."""
             raise AssertionError(f'unexpected gateway call: {name}')
 
         return operation
 
 
 class UnusedFileStore:
+    """Provide test double."""
+
     def __getattr__(self, name: str) -> Any:
+        """Resolve fake attribute."""
+
         def operation(*_: object, **__: object) -> object:
+            """Build test operation."""
             raise AssertionError(f'unexpected file store call: {name}')
 
         return operation
 
 
 def _prop_schema(prop: dict[str, Any]) -> dict[str, Any]:
+    """Build property schema."""
     if 'anyOf' in prop:
         return next(sub for sub in prop['anyOf'] if sub.get('type') != 'null')
     return prop
@@ -122,7 +133,6 @@ async def test_registers_exact_drive_inventory_flat_schemas() -> None:
 
     public = {tool.name: tool for tool in tools}
 
-    # Prohibited tool kinds
     prohibited_substrings = (
         'delete',
         'trash',
@@ -136,7 +146,6 @@ async def test_registers_exact_drive_inventory_flat_schemas() -> None:
         for prohibited in prohibited_substrings:
             assert prohibited not in name
 
-    # Search
     search = public['drive_search_files']
     assert 'q' not in search.input_schema['properties']
     assert 'params' not in search.input_schema['properties']
@@ -186,7 +195,6 @@ async def test_registers_exact_drive_inventory_flat_schemas() -> None:
         == MAX_DRIVE_TOKEN_CHARS
     )
 
-    # Get file
     get_file = public['drive_get_file']
     assert 'params' not in get_file.input_schema['properties']
     assert set(get_file.input_schema['properties']) == {'file_id'}
@@ -195,7 +203,6 @@ async def test_registers_exact_drive_inventory_flat_schemas() -> None:
     assert get_file_props['file_id']['minLength'] == 1
     assert get_file_props['file_id']['maxLength'] == MAX_DRIVE_ID_CHARS
 
-    # List folder
     list_folder = public['drive_list_folder']
     assert 'q' not in list_folder.input_schema['properties']
     assert 'params' not in list_folder.input_schema['properties']
@@ -221,7 +228,6 @@ async def test_registers_exact_drive_inventory_flat_schemas() -> None:
     )
     assert _prop_schema(list_folder_props['drive_id'])['minLength'] == 1
 
-    # Download file
     download_file = public['drive_download_file']
     assert 'params' not in download_file.input_schema['properties']
     assert 'acknowledgeAbuse' not in download_file.input_schema['properties']
@@ -233,7 +239,6 @@ async def test_registers_exact_drive_inventory_flat_schemas() -> None:
     assert download_props['file_id']['minLength'] == 1
     assert download_props['file_id']['maxLength'] == MAX_DRIVE_ID_CHARS
 
-    # Export file
     export_file = public['drive_export_file']
     assert 'params' not in export_file.input_schema['properties']
     assert 'mime_type' not in export_file.input_schema['properties']
@@ -261,7 +266,6 @@ async def test_registers_exact_drive_inventory_flat_schemas() -> None:
             fmt.value for fmt in DriveExportFormat
         ]
 
-    # Create folder
     create_folder = public['drive_create_folder']
     assert 'params' not in create_folder.input_schema['properties']
     assert 'mime_type' not in create_folder.input_schema['properties']
@@ -280,7 +284,6 @@ async def test_registers_exact_drive_inventory_flat_schemas() -> None:
         == MAX_DRIVE_ID_CHARS
     )
 
-    # Upload file
     upload_file = public['drive_upload_file']
     assert 'params' not in upload_file.input_schema['properties']
     assert 'path' not in upload_file.input_schema['properties']
@@ -312,7 +315,6 @@ async def test_registers_exact_drive_inventory_flat_schemas() -> None:
         == MAX_DRIVE_ID_CHARS
     )
 
-    # Update file
     update_file = public['drive_update_file']
     assert 'params' not in update_file.input_schema['properties']
     assert 'path' not in update_file.input_schema['properties']
@@ -351,7 +353,6 @@ async def test_registers_exact_drive_inventory_flat_schemas() -> None:
     assert _prop_schema(update_props['mime_type'])['minLength'] == 1
     assert _prop_schema(update_props['mime_type'])['maxLength'] == 255
 
-    # Move file
     move_file = public['drive_move_file']
     assert 'params' not in move_file.input_schema['properties']
     assert set(move_file.input_schema['properties']) == {
@@ -372,7 +373,6 @@ async def test_registers_exact_drive_inventory_flat_schemas() -> None:
         move_props['destination_parent_id']['maxLength'] == MAX_DRIVE_ID_CHARS
     )
 
-    # Copy file
     copy_file = public['drive_copy_file']
     assert 'params' not in copy_file.input_schema['properties']
     assert set(copy_file.input_schema['properties']) == {
@@ -439,12 +439,15 @@ async def test_search_files_delegates_flat_params_to_filters_and_gateway() -> (
     recorded_calls: list[tuple[DriveSearchFilters, int, str | None]] = []
 
     class SearchGateway(UnusedGateway):
+        """Provide fake gateway."""
+
         def search_files(
             self,
             filters: DriveSearchFilters,
             page_size: int = MAX_DRIVE_PAGE_SIZE,
             page_token: str | None = None,
         ) -> DriveFileList:
+            """Search fake files."""
             recorded_calls.append((filters, page_size, page_token))
             return DriveFileList(
                 files=(
@@ -550,12 +553,15 @@ async def test_search_files_delegates_default_parameters() -> None:
     recorded_calls: list[tuple[DriveSearchFilters, int, str | None]] = []
 
     class SearchGateway(UnusedGateway):
+        """Provide fake gateway."""
+
         def search_files(
             self,
             filters: DriveSearchFilters,
             page_size: int = MAX_DRIVE_PAGE_SIZE,
             page_token: str | None = None,
         ) -> DriveFileList:
+            """Search fake files."""
             recorded_calls.append((filters, page_size, page_token))
             return DriveFileList(
                 files=(),
@@ -603,7 +609,10 @@ async def test_get_file_delegates_to_gateway() -> None:
     recorded_calls: list[str] = []
 
     class GetFileGateway(UnusedGateway):
+        """Provide fake gateway."""
+
         def get_file(self, file_id: str) -> DriveFile:
+            """Get fake file."""
             recorded_calls.append(file_id)
             return DriveFile(
                 file_id=file_id,
@@ -647,6 +656,8 @@ async def test_list_folder_delegates_to_gateway() -> None:
     recorded_calls: list[tuple[str, int, str | None, str | None]] = []
 
     class ListFolderGateway(UnusedGateway):
+        """Provide fake gateway."""
+
         def list_folder(
             self,
             folder_id: str,
@@ -654,6 +665,7 @@ async def test_list_folder_delegates_to_gateway() -> None:
             page_token: str | None = None,
             drive_id: str | None = None,
         ) -> DriveFileList:
+            """List fake folder."""
             recorded_calls.append((folder_id, page_size, page_token, drive_id))
             return DriveFileList(
                 files=(
@@ -713,11 +725,14 @@ async def test_download_file_delegates_to_gateway_and_files() -> None:
     file_store = UnusedFileStore()
 
     class DownloadGateway(UnusedGateway):
+        """Provide fake gateway."""
+
         def download_file(
             self,
             file_id: str,
             files: Any,
         ) -> DriveManagedFile:
+            """Download fake file."""
             recorded_calls.append((file_id, files))
             return DriveManagedFile(
                 managed_name='managed_abc.pdf',
@@ -765,12 +780,15 @@ async def test_export_file_delegates_to_gateway_and_files() -> None:
     file_store = UnusedFileStore()
 
     class ExportGateway(UnusedGateway):
+        """Provide fake gateway."""
+
         def export_file(
             self,
             file_id: str,
             export_format: DriveExportFormat | str,
             files: Any,
         ) -> DriveManagedFile:
+            """Export fake file."""
             recorded_calls.append((file_id, export_format, files))
             return DriveManagedFile(
                 managed_name='managed_doc.docx',
@@ -824,11 +842,14 @@ async def test_create_folder_delegates_to_gateway() -> None:
     recorded_calls: list[tuple[str, str | None]] = []
 
     class CreateFolderGateway(UnusedGateway):
+        """Provide fake gateway."""
+
         def create_folder(
             self,
             name: str,
             parent_id: str | None = None,
         ) -> DriveMutationResult:
+            """Create fake folder."""
             recorded_calls.append((name, parent_id))
             return DriveMutationResult(
                 file=DriveFile(
@@ -878,6 +899,8 @@ async def test_upload_file_delegates_to_gateway_and_files() -> None:
     file_store = UnusedFileStore()
 
     class UploadGateway(UnusedGateway):
+        """Provide fake gateway."""
+
         def upload_file(
             self,
             managed_name: str,
@@ -888,6 +911,7 @@ async def test_upload_file_delegates_to_gateway_and_files() -> None:
             parent_id: str | None,
             files: Any,
         ) -> DriveMutationResult:
+            """Upload fake file."""
             recorded_calls.append(
                 (
                     managed_name,
@@ -971,6 +995,8 @@ async def test_update_file_delegates_to_gateway_and_files() -> None:
     file_store = UnusedFileStore()
 
     class UpdateGateway(UnusedGateway):
+        """Provide fake gateway."""
+
         def update_file(
             self,
             file_id: str,
@@ -982,6 +1008,7 @@ async def test_update_file_delegates_to_gateway_and_files() -> None:
             mime_type: str | None,
             files: Any,
         ) -> DriveMutationResult:
+            """Update fake file."""
             recorded_calls.append(
                 (
                     file_id,
@@ -1056,12 +1083,15 @@ async def test_move_file_delegates_to_gateway() -> None:
     recorded_calls: list[tuple[str, int, str]] = []
 
     class MoveGateway(UnusedGateway):
+        """Provide fake gateway."""
+
         def move_file(
             self,
             file_id: str,
             expected_version: int,
             destination_parent_id: str,
         ) -> DriveMutationResult:
+            """Move fake file."""
             recorded_calls.append(
                 (
                     file_id,
@@ -1118,12 +1148,15 @@ async def test_copy_file_delegates_to_gateway() -> None:
     recorded_calls: list[tuple[str, str | None, str | None]] = []
 
     class CopyGateway(UnusedGateway):
+        """Provide fake gateway."""
+
         def copy_file(
             self,
             file_id: str,
             name: str | None = None,
             parent_id: str | None = None,
         ) -> DriveMutationResult:
+            """Copy fake file."""
             recorded_calls.append((file_id, name, parent_id))
             return DriveMutationResult(
                 file=DriveFile(
@@ -1175,15 +1208,19 @@ async def test_copy_file_delegates_to_gateway() -> None:
 @pytest.mark.asyncio
 async def test_run_gateway_preserves_drive_errors() -> None:
     def failing_input() -> None:
+        """Simulate input failure."""
         raise DriveInputError('invalid search text')
 
     def failing_scope() -> None:
+        """Simulate scope failure."""
         raise DriveScopeError('missing write permissions')
 
     def failing_conflict() -> None:
+        """Simulate conflict failure."""
         raise DriveConflictError('file changed')
 
     def failing_provider() -> None:
+        """Simulate provider failure."""
         raise DriveProviderError('rate limited')
 
     with pytest.raises(DriveInputError, match='invalid search text'):
@@ -1202,9 +1239,11 @@ async def test_run_gateway_preserves_drive_errors() -> None:
 @pytest.mark.asyncio
 async def test_run_gateway_masks_unexpected_exceptions() -> None:
     def secret_error() -> None:
+        """Raise secret error."""
         raise RuntimeError('internal database connection string or secret')
 
     def type_error() -> None:
+        """Raise type error."""
         raise TypeError('unexpected NoneType')
 
     with pytest.raises(

@@ -1,3 +1,5 @@
+"""Authorization behavior tests."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -41,6 +43,7 @@ async def test_policy_server_guards_tools() -> None:
         available_to_readonly=True,
     )
     def op() -> str:
+        """Provide test operation."""
         return 'ok'
 
     assert srv.required_capability('op') == 'mail.read'
@@ -93,6 +96,7 @@ def test_policy_registrar_is_narrow_and_fail_closed() -> None:
 
     @reg.tool(name='auto_cap_tool')
     def auto_cap_tool() -> str:
+        """Provide automatic capability tool."""
         return 'auto'
 
     assert srv.required_capability('auto_cap_tool') == 'auto_cap_tool'
@@ -103,10 +107,12 @@ def test_policy_registrar_is_narrow_and_fail_closed() -> None:
         available_to_readonly=True,
     )
     def readonly_tool() -> str:
+        """Provide readonly tool."""
         return 'readonly'
 
     @reg.tool(name='full_tool', required_capability='mail.write')
     def full_tool() -> str:
+        """Provide full access tool."""
         return 'full'
 
     assert srv.registered_capabilities() == (
@@ -123,10 +129,12 @@ async def test_policy_server_guards_resources_and_prompts() -> None:
 
     @srv.resource('test://data')
     def get_data() -> str:
+        """Return test data."""
         return 'data'
 
     @srv.prompt(name='test_prompt')
     def get_test_prompt() -> str:
+        """Return test prompt."""
         return 'prompt text'
 
     assert await srv.list_resources() == []
@@ -199,18 +207,24 @@ async def test_policy_server_unknown_tool_and_unclassified_tool() -> None:
 
 def test_extension_seam_base_class() -> None:
     class CustomExtension(Extension):
+        """Model test extension."""
+
         def __init__(self) -> None:
+            """Initialize test double."""
             self.tools_registered = False
             self.routes_registered = False
             self.shut_down = False
 
         def register_tools(self, registrar: ToolRegistrar) -> None:
+            """Register test tools."""
             self.tools_registered = True
 
         def register_routes(self, app: Any) -> None:
+            """Register test routes."""
             self.routes_registered = True
 
         def shutdown(self) -> None:
+            """Stop test resource."""
             self.shut_down = True
 
     base = Extension()
@@ -241,6 +255,7 @@ async def test_full_only_tool_cannot_share_readonly_capability() -> None:
         available_to_readonly=True,
     )
     def read_tool() -> str:
+        """Provide readonly tool."""
         return 'read'
 
     @registrar.tool(
@@ -248,6 +263,7 @@ async def test_full_only_tool_cannot_share_readonly_capability() -> None:
         required_capability='mail.shared',
     )
     def write_tool() -> str:
+        """Provide write tool."""
         return 'write'
 
     principal = _make_principal(capabilities=frozenset({'mail.shared'}))
@@ -267,12 +283,14 @@ def test_duplicate_tool_registration_is_rejected_atomically() -> None:
 
     @registrar.tool(name='shared', available_to_readonly=True)
     def readonly_tool() -> str:
+        """Provide readonly tool."""
         return 'read'
 
     with pytest.raises(ValueError, match='duplicate tool registration'):
 
         @registrar.tool(name='shared')
         def mutation_tool() -> str:
+            """Provide mutation tool."""
             return 'write'
 
     assert server.required_capability('shared') == 'shared'

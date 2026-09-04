@@ -241,7 +241,7 @@ def test_documented_command_runs_without_service_environment(
     def consent(
         secrets: Path, requested: tuple[str, ...], port: int = 0
     ) -> Any:
-        """Record that consent was reached."""
+        """Record consent call."""
         seen['reached'] = True
         return credentials_for(DOCS_SCOPES)
 
@@ -271,7 +271,7 @@ def test_unusable_token_path_fails_before_consent(workspace: Path) -> None:
     def consent(
         secrets: Path, requested: tuple[str, ...], port: int = 0
     ) -> Any:
-        """Record that consent was reached."""
+        """Record consent call."""
         calls.append(secrets)
         return credentials_for(DOCS_SCOPES)
 
@@ -304,12 +304,12 @@ def test_unknown_failure_message_carries_no_payload(
     workspace: Path,
 ) -> None:
     class OAuthLibStyle(Exception):
-        """Represent a foreign library failure."""
+        """Model library failure."""
 
     def consent(
         secrets: Path, requested: tuple[str, ...], port: int = 0
     ) -> Any:
-        """Raise a foreign library failure."""
+        """Raise library failure."""
         raise OAuthLibStyle(
             '(mismatching_state) authorization_response=code=SECRET123'
         )
@@ -325,7 +325,7 @@ def test_os_error_message_hides_owner_path(workspace: Path) -> None:
     def consent(
         secrets: Path, requested: tuple[str, ...], port: int = 0
     ) -> Any:
-        """Raise a filesystem failure naming a path."""
+        """Raise filesystem failure."""
         raise FileNotFoundError(
             2, 'No such file or directory', '/Users/owner/secrets/value.json'
         )
@@ -357,7 +357,7 @@ def test_os_error_message_carries_only_the_error_name(
     def consent(
         secrets: Path, requested: tuple[str, ...], port: int = 0
     ) -> Any:
-        """Raise a filesystem failure carrying a payload."""
+        """Raise filesystem failure."""
         raise OSError(5, 'authorization_response=code=SECRET123')
 
     code, _, err = run_cli(workspace, 'docs', consent)
@@ -375,7 +375,7 @@ def test_non_integer_errno_still_yields_one_safe_json_line(
     def consent(
         secrets: Path, requested: tuple[str, ...], port: int = 0
     ) -> Any:
-        """Raise a two argument OSError with a str errno."""
+        """Raise structured OSError."""
         raise OSError('authorization_response=code=SECRET123', 'payload')
 
     code, out, err = run_cli(workspace, 'docs', consent)
@@ -400,7 +400,7 @@ def test_failing_exception_repr_cannot_escape_the_handler(
     def consent(
         secrets: Path, requested: tuple[str, ...], port: int = 0
     ) -> Any:
-        """Raise an error that breaks while rendering."""
+        """Raise rendering failure."""
         raise HostileAuthError
 
     code, out, err = run_cli(workspace, 'docs', consent)
@@ -418,7 +418,7 @@ def test_boolean_errno_is_not_read_as_a_permission_code(
     def consent(
         secrets: Path, requested: tuple[str, ...], port: int = 0
     ) -> Any:
-        """Raise an OSError whose errno is True."""
+        """Raise boolean errno."""
         error = OSError('failure')
         error.errno = True
         raise error
@@ -440,7 +440,7 @@ def test_explicit_token_path_ignores_its_environment_variable(
     def consent(
         secrets: Path, requested: tuple[str, ...], port: int = 0
     ) -> Any:
-        """Record that consent was reached."""
+        """Record consent call."""
         reached.append(secrets)
         return credentials_for(DOCS_SCOPES)
 
@@ -470,7 +470,7 @@ def test_missing_secrets_leaves_no_state_behind(tmp_path: Path) -> None:
     def consent(
         secrets: Path, requested: tuple[str, ...], port: int = 0
     ) -> Any:
-        """Record that consent was reached."""
+        """Record consent call."""
         calls.append(secrets)
         return credentials_for(DOCS_SCOPES)
 

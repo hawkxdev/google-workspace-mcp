@@ -73,7 +73,7 @@ def run(gateway: DocsGateway, operations: list[Any]) -> Any:
     )
 
 
-# Operation inventory
+# === Operation inventory ===
 
 
 def test_batch_operation_values_are_exactly_eight() -> None:
@@ -119,7 +119,7 @@ def test_bullet_presets_are_closed() -> None:
     )
 
 
-# Schema rejection
+# === Schema rejection ===
 
 
 def test_unknown_operation_is_rejected(
@@ -267,7 +267,7 @@ def test_batch_rejects_stale_revision(
     assert fake_service.calls_for('batchUpdate') == []
 
 
-# Ordering and atomicity
+# === Ordering and atomicity ===
 
 
 def test_batch_preserves_caller_order(
@@ -336,7 +336,7 @@ def test_reply_count_mismatch_fails_closed(
         run(gateway, [insert(index=1), insert(index=1)])
 
 
-# Request mapping
+# === Request mapping ===
 
 
 def test_insert_operation_inherits_top_level_tab(
@@ -526,7 +526,7 @@ def test_replace_operation_rejects_newline_literal(
     assert fake_service.documents_endpoint.calls == []
 
 
-# Range guards against the initial structure
+# === Range guards against the initial structure ===
 
 
 def test_batch_rejects_index_outside_segment(

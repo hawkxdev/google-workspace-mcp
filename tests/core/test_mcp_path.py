@@ -1,3 +1,5 @@
+"""MCP path behavior tests."""
+
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -28,6 +30,7 @@ LOGIN_PASS = 'secret-password'
 
 @pytest.fixture
 def service_config(tmp_path: Path) -> ServiceConfig:
+    """Provide service configuration."""
     state_dir = tmp_path / 'state'
     state_dir.mkdir(mode=0o700, parents=True)
     return ServiceConfig(
@@ -56,6 +59,7 @@ def oauth_state(
     service_config: ServiceConfig,
     tmp_path: Path,
 ) -> Iterator[OAuthState]:
+    """Provide OAuth state."""
     download_dir = tmp_path / 'downloads'
     download_dir.mkdir(mode=0o700, parents=True)
     with OAuthState(
@@ -215,21 +219,27 @@ def test_ready_endpoint_accessible_with_bearer_token(
 
 
 class _DummyExtension(Extension):
+    """Model test extension."""
+
     def __init__(self, state: OAuthState | None = None) -> None:
+        """Initialize test double."""
         self.state = state
         self.routes_registered = False
         self.shut_down = False
         self.state_open_at_shutdown: bool | None = None
 
     def register_routes(self, app: Any) -> None:
+        """Register test routes."""
         self.routes_registered = True
 
         async def ping(_: Request) -> PlainTextResponse:
+            """Return ping response."""
             return PlainTextResponse('pong')
 
         app.routes.append(Route('/ext/ping', ping, methods=['GET']))
 
     def shutdown(self) -> None:
+        """Stop test resource."""
         self.shut_down = True
         if self.state is not None:
             self.state_open_at_shutdown = not self.state._closed
@@ -285,13 +295,15 @@ def test_extension_route_and_lifespan_shutdown(
     assert oauth_state._closed is True
     with pytest.raises(sqlite3.ProgrammingError):
         oauth_state.table_names()
-    # Double close is safe
     oauth_state.close()
     assert oauth_state._closed is True
 
 
 class _UnsafeMountExtension(Extension):
+    """Model test extension."""
+
     def register_routes(self, app: Any) -> None:
+        """Register test routes."""
         app.routes.append(Mount('/ext', app=JSONResponse({'ext': 'mount'})))
 
 
@@ -306,8 +318,13 @@ def test_extension_rejects_unsafe_mount(
 
 
 class _UnsafeWebSocketExtension(Extension):
+    """Model test extension."""
+
     def register_routes(self, app: Any) -> None:
+        """Register test routes."""
+
         async def ws_endpoint(_: Any) -> None:
+            """Provide websocket endpoint."""
             pass
 
         app.routes.append(WebSocketRoute('/ws', ws_endpoint))
@@ -326,8 +343,13 @@ def test_extension_rejects_unsafe_websocket(
 
 
 class _CollidingRouteExtension(Extension):
+    """Model test extension."""
+
     def register_routes(self, app: Any) -> None:
+        """Register test routes."""
+
         async def mock_health(_: Request) -> JSONResponse:
+            """Provide health response."""
             return JSONResponse({'evil': True})
 
         app.routes.append(Route('/health', mock_health, methods=['GET']))
@@ -346,11 +368,17 @@ def test_extension_rejects_auth_exempt_collision(
 
 
 class _McpPathCollidingExtension(Extension):
+    """Model test extension."""
+
     def __init__(self, mcp_path: str) -> None:
+        """Initialize test double."""
         self._mcp_path = mcp_path
 
     def register_routes(self, app: Any) -> None:
+        """Register test routes."""
+
         async def fake_mcp(_: Request) -> PlainTextResponse:
+            """Provide fake MCP."""
             return PlainTextResponse('fake')
 
         app.routes.append(Route(self._mcp_path, fake_mcp, methods=['POST']))

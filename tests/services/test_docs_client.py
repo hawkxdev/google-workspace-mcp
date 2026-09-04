@@ -573,7 +573,7 @@ def test_library_runtime_failure_stays_masked(
     store: FakeDocsStore,
 ) -> None:
     def explode(_: Any) -> Any:
-        """Raise a library runtime failure."""
+        """Raise library runtime failure."""
         raise RuntimeError('/Users/owner/token.json could not be parsed')
 
     gateway = DocsGateway(store, service_builder=explode)

@@ -33,7 +33,7 @@ RESOURCE = 'https://mcp.example.test/gmail/mcp'
 REDIRECT_URI = 'https://client.example.test/callback'
 READONLY_CAPABILITIES = ('gmail_get_message', 'gmail_search')
 
-# Shared test fixtures
+# === Shared test fixtures ===
 
 
 @pytest.fixture
@@ -117,7 +117,7 @@ def client(endpoints: OAuthEndpoints) -> TestClient:
     return TestClient(app)
 
 
-# PKCE and flow helpers
+# === PKCE and flow helpers ===
 
 
 def _pkce() -> tuple[str, str]:
@@ -233,7 +233,7 @@ def _exchange(
     )
 
 
-# Metadata and helper tests
+# === Metadata and helper tests ===
 
 
 def test_oauth_metadata_advertises_confidential_code_flow(client):
@@ -342,7 +342,7 @@ def test_metadata_url_helpers_apply_distinct_query_rules():
         authorization_server_metadata_url(resource)
 
 
-# Client registration tests
+# === Client registration tests ===
 
 
 def test_registration_returns_per_client_secret_and_persists(
@@ -386,7 +386,7 @@ def test_registration_rejects_empty_or_invalid_redirect_metadata(
     assert oauth_state.list_clients() == clients_before
 
 
-# D19 multi client regression tests
+# === D19 multi client regression tests ===
 
 
 def test_two_distinct_clients_can_register_same_redirect_and_both_authorize(
@@ -457,7 +457,7 @@ def test_two_dynamic_clients_receive_independent_access_tokens(client):
     assert first_refresh not in {first_token, second_token}
 
 
-# Authorization and exchange flow tests
+# === Authorization and exchange flow tests ===
 
 
 def test_authorization_code_survives_state_reopen(
@@ -559,7 +559,7 @@ def test_invalid_exchange_inputs_do_not_consume_code(client):
     assert accepted.status_code == 200
 
 
-# Login and consent security tests
+# === Login and consent security tests ===
 
 
 def test_authorize_requires_interactive_login(client):
@@ -662,13 +662,13 @@ def test_missing_login_configuration_fails_closed(
     assert 'location' not in post_response.headers
 
 
-# Legacy import and validation tests
+# === Legacy import and validation tests ===
 
 
 def test_pending_import_requires_fresh_login_then_issues_exact_readonly_token(
     tmp_path: Path,
 ):
-    # 1. Build legacy config
+    # Step 1: Build legacy config
     legacy_path = tmp_path / 'legacy_pending' / 'clients.json'
     client_id, client_secret, redirect_uri = _write_pending_legacy_client(
         legacy_path
@@ -696,7 +696,7 @@ def test_pending_import_requires_fresh_login_then_issues_exact_readonly_token(
     )
     downloads = tmp_path / 'pending_downloads'
     downloads.mkdir(mode=0o700)
-    # 2. Open OAuth endpoints
+    # Step 2: Open OAuth endpoints
     with OAuthState(
         config.oauth_state_path,
         download_path=downloads,
@@ -719,7 +719,7 @@ def test_pending_import_requires_fresh_login_then_issues_exact_readonly_token(
         test_client = TestClient(Starlette(routes=endpoints.routes))
         params = _authz_params(client_id, redirect_uri)
 
-        # 3. Reject stale login
+        # Step 3: Reject stale login
         denied = test_client.post(
             '/gmail/oauth/authorize',
             data={**params, 'username': LOGIN_USERNAME, 'password': 'wrong'},
@@ -728,7 +728,7 @@ def test_pending_import_requires_fresh_login_then_issues_exact_readonly_token(
         assert denied.status_code == 401
         assert state.get_client(client_id).policy == REAUTHORIZATION_REQUIRED
 
-        # 4. Complete reauthorization
+        # Step 4: Complete reauthorization
         code = _authorize(test_client, client_id, redirect_uri)
         accepted = _exchange(
             test_client,
@@ -738,7 +738,7 @@ def test_pending_import_requires_fresh_login_then_issues_exact_readonly_token(
             redirect_uri=redirect_uri,
         )
 
-        # 5. Verify readonly token
+        # Step 5: Verify readonly token
         assert accepted.status_code == 200
         assert state.get_client(client_id).policy == MCP_READONLY_V1
         token_id = accepted.json()['access_token'].split('.')[1]
@@ -752,7 +752,7 @@ def test_pending_import_requires_fresh_login_then_issues_exact_readonly_token(
 def test_reauthorization_rolls_back_if_code_insert_fails(
     tmp_path: Path,
 ):
-    # 1. Build rollback config
+    # Step 1: Build rollback config
     legacy_path = tmp_path / 'legacy_rollback' / 'clients.json'
     client_id, _, redirect_uri = _write_pending_legacy_client(legacy_path)
     state_path = tmp_path / 'rollback_state' / 'oauth_state.sqlite3'
@@ -778,7 +778,7 @@ def test_reauthorization_rolls_back_if_code_insert_fails(
     )
     downloads = tmp_path / 'rollback_downloads'
     downloads.mkdir(mode=0o700)
-    # 2. Open rollback state
+    # Step 2: Open rollback state
     with OAuthState(
         config.oauth_state_path,
         download_path=downloads,
@@ -791,7 +791,7 @@ def test_reauthorization_rolls_back_if_code_insert_fails(
         refresh_token_ttl_seconds=config.refresh_token_ttl_seconds,
     ) as state:
         state.migrate_legacy()
-        # 3. Install failing trigger
+        # Step 3: Install failing trigger
         state._connection.execute(
             'CREATE TRIGGER fail_code_insert BEFORE INSERT ON '
             'authorization_codes BEGIN '
@@ -806,7 +806,7 @@ def test_reauthorization_rolls_back_if_code_insert_fails(
         )
         test_client = TestClient(Starlette(routes=endpoints.routes))
 
-        # 4. Exercise failed authorization
+        # Step 4: Exercise failed authorization
         with pytest.raises(
             sqlite3.IntegrityError, match='synthetic code insert failure'
         ):
@@ -820,7 +820,7 @@ def test_reauthorization_rolls_back_if_code_insert_fails(
                 follow_redirects=False,
             )
 
-        # 5. Verify transaction rollback
+        # Step 5: Verify transaction rollback
         assert state.get_client(client_id).policy == REAUTHORIZATION_REQUIRED
 
 

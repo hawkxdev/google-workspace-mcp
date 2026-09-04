@@ -1,3 +1,5 @@
+"""Entrypoint behavior tests."""
+
 import importlib
 from unittest.mock import MagicMock
 

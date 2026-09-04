@@ -145,7 +145,7 @@ def test_resource_metadata_url_removes_authority_trailing_slash() -> None:
 def test_percent_encoded_resource_metadata_route_is_public(
     tmp_path: Path,
 ) -> None:
-    # 1. Build encoded config
+    # Step 1: Build encoded config
     config = ServiceConfig(
         service_id='gmail',
         public_url=ISSUER,
@@ -165,7 +165,7 @@ def test_percent_encoded_resource_metadata_route_is_public(
         access_token_ttl_seconds=86400,
         refresh_token_ttl_seconds=2592000,
     )
-    # 2. Build protected app
+    # Step 2: Build protected app
     state = OAuthState(
         config.oauth_state_path,
         download_path=tmp_path / 'downloads',
@@ -190,7 +190,7 @@ def test_percent_encoded_resource_metadata_route_is_public(
         config=config,
         oauth_state=state,
     )
-    # 3. Request encoded metadata
+    # Step 3: Request encoded metadata
     try:
         with TestClient(app) as test_client:
             response = test_client.get(
@@ -199,7 +199,7 @@ def test_percent_encoded_resource_metadata_route_is_public(
     finally:
         state.close()
 
-    # 4. Verify public response
+    # Step 4: Verify public response
     assert response.status_code == 200
     assert response.text == 'metadata'
 

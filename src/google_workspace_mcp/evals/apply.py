@@ -291,6 +291,7 @@ def _resolve_request(
             if isinstance(raw_body, bytes)
             else serialized
         )
+        request.body_size = len(request.body)
     unresolved = request.uri
     if request.body is not None:
         unresolved += str(request.body)

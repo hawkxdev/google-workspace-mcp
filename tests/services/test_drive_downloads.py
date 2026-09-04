@@ -1,4 +1,4 @@
-"""Test Drive binary download and Google Workspace export."""
+"""Drive download behavior tests."""
 
 from __future__ import annotations
 
@@ -57,12 +57,14 @@ class FakeRequest:
         value: Any = None,
         chunks: list[Any] | None = None,
     ) -> None:
+        """Initialize test double."""
         self.value = value
         self.chunks = chunks or []
         self.retries: list[int] = []
         self.uri = 'https://drive.googleapis.com/drive/v3/fake'
 
     def execute(self, num_retries: int = 0) -> Any:
+        """Execute prepared resource."""
         self.retries.append(num_retries)
         if isinstance(self.value, Exception):
             raise self.value
@@ -78,6 +80,7 @@ class FakeDownloader:
         request: FakeRequest,
         chunksize: int = 1024 * 1024,
     ) -> None:
+        """Initialize test double."""
         self.fd = fd
         self.request = request
         self.chunksize = chunksize
@@ -86,6 +89,7 @@ class FakeDownloader:
         self.retries: list[int] = []
 
     def next_chunk(self, num_retries: int = 0) -> tuple[Any, bool]:
+        """Return download chunk."""
         self.retries.append(num_retries)
         if self.index < len(self.chunks):
             chunk = self.chunks[self.index]
@@ -99,14 +103,16 @@ class FakeDownloader:
 
 
 class FakeFilesEndpoint:
-    """Record Drive files endpoint calls."""
+    """Record endpoint calls."""
 
     def __init__(self) -> None:
+        """Initialize test double."""
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.responses: dict[str, Any] = {}
         self.media_chunks: dict[str, list[Any]] = {}
 
     def get(self, **kwargs: Any) -> FakeRequest:
+        """Get fake get."""
         self.calls.append(('get', kwargs))
         file_id = kwargs.get('fileId', 'default')
         fallback = self.responses.get('get', {})
@@ -114,6 +120,7 @@ class FakeFilesEndpoint:
         return FakeRequest(resp)
 
     def get_media(self, **kwargs: Any) -> FakeRequest:
+        """Get fake media."""
         self.calls.append(('get_media', kwargs))
         file_id = kwargs.get('fileId', 'default')
         chunks = self.media_chunks.get(
@@ -123,6 +130,7 @@ class FakeFilesEndpoint:
         return FakeRequest(chunks=chunks)
 
     def export_media(self, **kwargs: Any) -> FakeRequest:
+        """Export fake media."""
         self.calls.append(('export_media', kwargs))
         file_id = kwargs.get('fileId', 'default')
         mime_type = kwargs.get('mimeType', 'default')
@@ -141,9 +149,11 @@ class FakeDriveService:
     """Expose fake Drive endpoints."""
 
     def __init__(self) -> None:
+        """Initialize test double."""
         self.files_endpoint = FakeFilesEndpoint()
 
     def files(self) -> FakeFilesEndpoint:
+        """Return files resource."""
         return self.files_endpoint
 
 
@@ -151,12 +161,14 @@ class FakeStore(GoogleCredentialStore):
     """Return Drive test credentials."""
 
     def __init__(self) -> None:
+        """Initialize test double."""
         self.credentials = GoogleCredentials(
             token='access_token',
             scopes=DRIVE_SCOPES,
         )
 
     def refresh(self, request: Any = None) -> GoogleCredentials:
+        """Refresh fake resource."""
         return self.credentials
 
 
@@ -167,6 +179,7 @@ def _valid_file_payload(
     size: int = 1024,
     sha256_checksum: str = '',
 ) -> dict[str, Any]:
+    """Build valid file payload."""
     return {
         'id': file_id,
         'name': name,
@@ -188,6 +201,7 @@ def _valid_file_payload(
 def _make_http_error(
     status: int, reason: str | None = None, message: str = 'Error'
 ) -> HttpError:
+    """Build HTTP error."""
     resp = httplib2.Response({'status': str(status)})
     body: dict[str, Any] = {'error': {'message': message}}
     if reason is not None:
@@ -198,6 +212,7 @@ def _make_http_error(
 
 @pytest.fixture
 def managed_store(tmp_path: Path) -> ManagedFileStore:
+    """Provide managed store."""
     store_dir = tmp_path / 'downloads'
     store_dir.mkdir(mode=0o700)
     return ManagedFileStore(store_dir)
@@ -257,7 +272,6 @@ def test_download_file_metadata_preflight(
     assert result.size == len(content)
     assert result.sha256 == content_hash
 
-    # Verify published file on disk
     target = managed_store.directory / result.managed_name
     assert target.exists()
     assert target.read_bytes() == content
@@ -389,7 +403,6 @@ def test_download_file_chunked_streaming(
     published = managed_store.directory / result.managed_name
     assert published.read_bytes() == total_data
 
-    # Verify no temp files left
     no_temp = all(
         not p.name.startswith('.tmp_')
         for p in managed_store.directory.iterdir()
@@ -407,7 +420,6 @@ def test_download_file_chunk_overflow_cleans_up(
         mime_type='application/octet-stream',
         size=10,
     )
-    # Stream sends 20 bytes when declared size was 10
     payload_chunk = b'0123456789extra_bytes'
     service.files_endpoint.media_chunks['get_media_overflow_1'] = [
         payload_chunk
@@ -435,7 +447,6 @@ def test_download_file_declared_size_mismatch_cleans_up(
         mime_type='application/octet-stream',
         size=100,
     )
-    # Stream sends only 10 bytes when declared size was 100
     service.files_endpoint.media_chunks['get_media_short_1'] = [b'short_data']
 
     gateway = DriveGateway(
@@ -553,20 +564,16 @@ def test_download_file_transport_error_cleans_up(
 @pytest.mark.parametrize(
     'source_mime,export_format,expected_mime,expected_ext',
     [
-        # Google Docs
         (GOOGLE_DOC_MIME, DriveExportFormat.PDF, 'application/pdf', '.pdf'),
         (GOOGLE_DOC_MIME, DriveExportFormat.DOCX, _DOCX_MIME, '.docx'),
         (GOOGLE_DOC_MIME, DriveExportFormat.TXT, 'text/plain', '.txt'),
         (GOOGLE_DOC_MIME, DriveExportFormat.HTML, 'application/zip', '.zip'),
-        # Google Sheets
         (GOOGLE_SHEET_MIME, DriveExportFormat.PDF, 'application/pdf', '.pdf'),
         (GOOGLE_SHEET_MIME, DriveExportFormat.XLSX, _XLSX_MIME, '.xlsx'),
         (GOOGLE_SHEET_MIME, DriveExportFormat.CSV, 'text/csv', '.csv'),
-        # Google Slides
         (GOOGLE_SLIDE_MIME, DriveExportFormat.PDF, 'application/pdf', '.pdf'),
         (GOOGLE_SLIDE_MIME, DriveExportFormat.PPTX, _PPTX_MIME, '.pptx'),
         (GOOGLE_SLIDE_MIME, DriveExportFormat.TXT, 'text/plain', '.txt'),
-        # Google Drawings
         (
             GOOGLE_DRAWING_MIME,
             DriveExportFormat.PDF,
@@ -728,7 +735,6 @@ def test_export_file_10mib_overflow_cleans_up(
         mime_type=GOOGLE_SHEET_MIME,
         size=0,
     )
-    # 10 MiB + 1 byte
     chunk = b'x' * (MAX_DRIVE_EXPORT_BYTES + 1)
     service.files_endpoint.media_chunks['export_media_bigexp_1'] = [chunk]
 
@@ -818,5 +824,4 @@ def test_export_format_csv_first_sheet_description() -> None:
     assert 'csv' in EXPORT_FORMATS[GOOGLE_SHEET_MIME]
     assert EXPORT_FORMATS[GOOGLE_SHEET_MIME]['csv'].extension == '.csv'
     assert EXPORT_FORMATS[GOOGLE_SHEET_MIME]['csv'].mime_type == 'text/csv'
-    # DriveExportFormat.CSV enum value
     assert DriveExportFormat.CSV.value == 'csv'

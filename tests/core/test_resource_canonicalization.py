@@ -39,7 +39,7 @@ CHALLENGE = (
 )
 
 
-# Canonicalization helper cases
+# === Canonicalization helper cases ===
 
 
 def test_canonical_form_collapses_only_the_root_slash() -> None:
@@ -52,7 +52,7 @@ def test_canonical_form_collapses_only_the_root_slash() -> None:
     assert canonicalize_resource('') == ''
 
 
-# Shared endpoint fixtures
+# === Shared endpoint fixtures ===
 
 
 @pytest.fixture
@@ -129,7 +129,7 @@ def endpoint(endpoints: OAuthEndpoints) -> TestClient:
     return TestClient(app)
 
 
-# Endpoint flow helpers
+# === Endpoint flow helpers ===
 
 
 def _register(
@@ -213,7 +213,7 @@ def _refresh(
     )
 
 
-# Path resource exact matching tests
+# === Path resource exact matching tests ===
 
 
 def test_path_resource_passes_full_flow(endpoint: TestClient) -> None:
@@ -353,7 +353,7 @@ def test_duplicate_resource_parameter_rejected_everywhere(
     assert rotated.json()['error'] == 'invalid_request'
 
 
-# State level resource binding tests
+# === State level resource binding tests ===
 
 
 def test_state_level_binding_canonicalizes_stored_root_form(

@@ -82,11 +82,24 @@ _PROVIDER_RESPONSES: tuple[dict[str, Any], ...] = (
 )
 
 
+def _validate_content_length(
+    body: str | bytes | None,
+    headers: Mapping[str, str],
+) -> None:
+    """Validate HTTP body framing."""
+    payload = body.encode('utf-8') if isinstance(body, str) else body
+    declared_length = headers.get('content-length')
+    if payload is not None and declared_length is not None:
+        assert int(declared_length) == len(payload), (
+            f'content-length {declared_length} != body {len(payload)}'
+        )
+
+
 class RecordingGoogleHttp:
     """Return deterministic Google responses."""
 
     def __init__(self, fail_at: int | None = None) -> None:
-        """Configure one transient provider failure."""
+        """Initialize test double."""
         self.fail_at = fail_at
         self.failed_once = False
         self.operation_index = 0
@@ -101,6 +114,8 @@ class RecordingGoogleHttp:
         **_kwargs: Any,
     ) -> tuple[Response, bytes]:
         """Record one transport execution."""
+        request_headers = dict(headers or {})
+        _validate_content_length(body, request_headers)
         operation_id = EXPECTED_OPERATION_IDS[self.operation_index]
         body_text = body.decode('utf-8') if isinstance(body, bytes) else body
         parsed_body = json.loads(body_text) if body_text else {}
@@ -110,7 +125,7 @@ class RecordingGoogleHttp:
                 'uri': uri,
                 'method': method,
                 'body': parsed_body,
-                'headers': dict(headers or {}),
+                'headers': request_headers,
             }
         )
         if self.fail_at == self.operation_index and not self.failed_once:
@@ -127,7 +142,7 @@ class RecordingGoogleHttp:
         return response, json.dumps(payload).encode('utf-8')
 
     def service_factory(self) -> GoogleServiceSet:
-        """Build discovery clients on the double."""
+        """Build discovery clients."""
         common = {
             'http': self,
             'cache_discovery': False,
@@ -163,7 +178,7 @@ def _write_planned_bindings(path: Path) -> FixtureBindings:
 
 
 def _confirmation(bindings: FixtureBindings) -> ApplicationConfirmation:
-    """Confirm the canonical pristine preview."""
+    """Confirm pristine fixture preview."""
     digest = build_preview(bindings).document.preview_digest
     return ApplicationConfirmation(
         fixture_version='stage12-v1',
@@ -175,10 +190,29 @@ def _confirmation(bindings: FixtureBindings) -> ApplicationConfirmation:
 # === Application contract ===
 
 
+@pytest.mark.parametrize('body', ['{}', b'{}'])
+def test_transport_double_rejects_mismatched_content_length(
+    body: str | bytes,
+) -> None:
+    transport = RecordingGoogleHttp()
+
+    with pytest.raises(
+        AssertionError,
+        match='content-length 3 != body 2',
+    ):
+        transport.request(
+            'https://example.invalid',
+            method='POST',
+            body=body,
+            headers={'content-length': '3'},
+        )
+
+    assert transport.calls == []
+
+
 def test_apply_executes_every_operation_and_persists_bindings(
     protected_json_file: Path,
 ) -> None:
-    """Apply every write exactly once."""
     protected_json_file.parent.chmod(0o755)
     bindings = _write_planned_bindings(protected_json_file)
     transport = RecordingGoogleHttp()
@@ -207,7 +241,6 @@ def test_failure_persists_exact_successful_prefix_without_retry(
     protected_json_file: Path,
     fail_at: int,
 ) -> None:
-    """Stop once with an atomic prefix."""
     bindings = _write_planned_bindings(protected_json_file)
     initial = build_preview(bindings)
     transport = RecordingGoogleHttp(fail_at=fail_at)
@@ -260,7 +293,6 @@ def test_failure_persists_exact_successful_prefix_without_retry(
 def test_partial_registry_refuses_repeated_application(
     protected_json_file: Path,
 ) -> None:
-    """Refuse automatic partial resumption."""
     bindings = _write_planned_bindings(protected_json_file)
     failing_transport = RecordingGoogleHttp(fail_at=3)
     with pytest.raises(FixtureApplicationError):
@@ -290,7 +322,6 @@ def test_partial_registry_refuses_repeated_application(
 def test_digest_mismatch_executes_nothing_and_preserves_registry(
     protected_json_file: Path,
 ) -> None:
-    """Reject an unconfirmed preview."""
     _write_planned_bindings(protected_json_file)
     original = protected_json_file.read_bytes()
     transport = RecordingGoogleHttp()
@@ -318,7 +349,6 @@ def test_missing_private_input_executes_nothing(
     protected_json_file: Path,
     missing_value: str,
 ) -> None:
-    """Validate all private inputs before writes."""
     bindings = _planned_bindings().model_copy(update={missing_value: None})
     write_bindings(protected_json_file, bindings)
     transport = RecordingGoogleHttp()
@@ -338,7 +368,6 @@ def test_missing_private_input_executes_nothing(
 def test_version_mismatch_executes_nothing_and_preserves_registry(
     protected_json_file: Path,
 ) -> None:
-    """Reject a different fixture version."""
     bindings = _write_planned_bindings(protected_json_file)
     original = protected_json_file.read_bytes()
     transport = RecordingGoogleHttp()
@@ -363,7 +392,6 @@ def test_atomic_save_failure_keeps_registry_readable(
     protected_json_file: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Keep the old registry on replacement failure."""
     bindings = _write_planned_bindings(protected_json_file)
     transport = RecordingGoogleHttp()
 
@@ -392,7 +420,6 @@ def test_atomic_save_failure_keeps_registry_readable(
 def test_executed_requests_resolve_private_and_provider_values(
     protected_json_file: Path,
 ) -> None:
-    """Resolve every execution placeholder."""
     bindings = _write_planned_bindings(protected_json_file)
     transport = RecordingGoogleHttp()
 
@@ -431,7 +458,6 @@ def test_executed_requests_resolve_private_and_provider_values(
 
 
 def test_public_preview_excludes_private_application_values() -> None:
-    """Keep private values outside preview."""
     bindings = _planned_bindings()
 
     output = build_preview(bindings).document.model_dump_json()
@@ -446,7 +472,7 @@ def test_public_preview_excludes_private_application_values() -> None:
 
 
 def _credential_directory(tmp_path: Path) -> Path:
-    """Create protected seed credential paths."""
+    """Create protected credential paths."""
     credentials_dir = tmp_path / 'google-tokens'
     credentials_dir.mkdir(mode=0o700)
     for service in ServiceName:
@@ -459,7 +485,6 @@ def _credential_directory(tmp_path: Path) -> Path:
 def test_seed_credentials_require_protected_directory_and_files(
     tmp_path: Path,
 ) -> None:
-    """Accept five protected seed credentials."""
     credentials_dir = _credential_directory(tmp_path)
 
     paths = validate_seed_credentials(credentials_dir)
@@ -475,7 +500,6 @@ def test_seed_credentials_reject_unsafe_paths(
     tmp_path: Path,
     unsafe_target: str,
 ) -> None:
-    """Reject unsafe seed credential paths."""
     credentials_dir = _credential_directory(tmp_path)
     if unsafe_target == 'directory':
         credentials_dir.chmod(0o755)
@@ -499,7 +523,6 @@ def test_apply_cli_requires_explicit_credentials_directory(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Reject apply without explicit credentials."""
     operation_calls: list[Path] = []
 
     def fake_apply_fixture(
@@ -541,7 +564,6 @@ def test_apply_cli_passes_explicit_confirmation(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Expose confirmed apply subcommand."""
     captured: dict[str, Any] = {}
     credentials_dir = tmp_path / 'google-tokens'
 

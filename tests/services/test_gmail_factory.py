@@ -19,6 +19,7 @@ class ExtraExtension(Extension):
 
         @registrar.tool(name='external_tool')
         def external_tool() -> str:
+            """Provide external test tool."""
             return 'external'
 
 

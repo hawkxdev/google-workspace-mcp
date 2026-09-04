@@ -1,3 +1,5 @@
+"""Multi service smoke tests."""
+
 import sqlite3
 from pathlib import Path
 
@@ -54,13 +56,17 @@ def _setup_srv(
 
 
 class _CollidingRouteExtension(Extension):
+    """Model test extension."""
+
     def __init__(self, path: str) -> None:
+        """Initialize test double."""
         self._path = path
 
     def register_routes(self, app: object) -> None:
         """Register colliding extension route."""
 
         async def _endpoint(_request: Request) -> JSONResponse:
+            """Provide test endpoint."""
             return JSONResponse({'collision': True})
 
         routes = getattr(app, 'routes', None)
@@ -71,7 +77,10 @@ class _CollidingRouteExtension(Extension):
 
 
 class _CustomRouteExtension(Extension):
+    """Model test extension."""
+
     def __init__(self, path: str, tag: str) -> None:
+        """Initialize test double."""
         self._path = path
         self._tag = tag
 
@@ -79,6 +88,7 @@ class _CustomRouteExtension(Extension):
         """Register custom extension route."""
 
         async def _endpoint(_request: Request) -> JSONResponse:
+            """Provide test endpoint."""
             return JSONResponse({'tag': self._tag})
 
         routes = getattr(app, 'routes', None)
@@ -87,6 +97,8 @@ class _CustomRouteExtension(Extension):
 
 
 class _MountExtension(Extension):
+    """Model test extension."""
+
     def register_routes(self, app: object) -> None:
         """Register mount extension route."""
         routes = getattr(app, 'routes', None)
@@ -95,10 +107,13 @@ class _MountExtension(Extension):
 
 
 class _WebSocketExtension(Extension):
+    """Model test extension."""
+
     def register_routes(self, app: object) -> None:
         """Register websocket extension route."""
 
         async def _ws_endpoint(_ws: object) -> None:
+            """Provide websocket endpoint."""
             pass
 
         routes = getattr(app, 'routes', None)
@@ -304,7 +319,7 @@ def test_cross_service_token_isolation(
         assert res.status_code == 401
         assert 'invalid_token' in res.headers.get('WWW-Authenticate', '')
 
-        # File and state isolation assertions
+        # Step: File and state isolation assertions
         assert state_drive.path != state_gmail.path
         assert state_drive.download_path != state_gmail.download_path
         assert state_gmail.lookup_access_token(issued.access_token) is None
@@ -346,7 +361,7 @@ def test_all_five_services_multi_isolation_and_route_collisions(
         assert len({id(s) for s in all_servers}) == 5
         assert len({id(st) for st in all_states}) == 5
 
-        # Distinct metadata and persistence paths across 5 services
+        # Step: Distinct metadata and persistence paths across 5 services
         ports = [p for _, p in SERVICES_SPEC]
         resources = [st.resource for st in all_states]
         state_paths = [st.path for st in all_states]
@@ -356,8 +371,8 @@ def test_all_five_services_multi_isolation_and_route_collisions(
         assert len(set(state_paths)) == 5
         assert len(set(download_paths)) == 5
 
-        # Verify tool inventory per service:
-        # Gmail 18, Calendar 9, Drive 10, Sheets 11, Docs 7
+        # Step: Verify tool inventory per service
+        # Step: Gmail 18, Calendar 9, Drive 10, Sheets 11, Docs 7
         assert len(res_gmail[1]._tool_manager.list_tools()) == 18
         assert len(res_cal[1]._tool_manager.list_tools()) == 9
         assert len(res_drv[1]._tool_manager.list_tools()) == 10
@@ -370,14 +385,14 @@ def test_all_five_services_multi_isolation_and_route_collisions(
         assert len(res_sht[2].readonly_capabilities) == 3
         assert len(res_doc[2].readonly_capabilities) == 2
 
-        # Check endpoints and route collisions on all 5 services
+        # Step: Check endpoints and route collisions on all 5 services
         for (srv_name, _), app, state in zip(
             SERVICES_SPEC, all_apps, all_states, strict=True
         ):
             srv_lower = srv_name.lower()
             client = TestClient(app, raise_server_exceptions=False)
 
-            # Public /health check
+            # Step: Public /health check
             res_health = client.get('/health')
             assert res_health.status_code == 200
             assert res_health.json() == {
@@ -389,14 +404,14 @@ def test_all_five_services_multi_isolation_and_route_collisions(
             assert 'audit' not in health_body
             assert 'secret' not in health_body
 
-            # Protected /ready check without auth (401)
+            # Step: Protected /ready check without auth (401)
             res_ready_unauth = client.get('/ready')
             assert res_ready_unauth.status_code == 401
             assert 'Bearer' in res_ready_unauth.headers.get(
                 'WWW-Authenticate', ''
             )
 
-            # Issue valid token for this service
+            # Step: Issue valid token for this service
             reg = state.register_client(
                 (f'https://client.example.test/{srv_lower}/callback',)
             )
@@ -405,7 +420,7 @@ def test_all_five_services_multi_isolation_and_route_collisions(
                 resource=f'https://mcp.example.test/{srv_lower}/mcp',
             )
 
-            # Protected /ready check with valid auth (200)
+            # Step: Protected /ready check with valid auth (200)
             res_ready_auth = client.get(
                 '/ready',
                 headers={'Authorization': f'Bearer {tok.access_token}'},
@@ -413,7 +428,7 @@ def test_all_five_services_multi_isolation_and_route_collisions(
             assert res_ready_auth.status_code == 200
             assert res_ready_auth.json() == {'status': 'ready'}
 
-            # OAuth well-known metadata checks
+            # Step: OAuth metadata checks
             res_res_meta = client.get(
                 f'/.well-known/oauth-protected-resource/{srv_lower}/mcp'
             )
@@ -439,11 +454,11 @@ def test_all_five_services_multi_isolation_and_route_collisions(
                 == f'https://mcp.example.test/{srv_lower}/mcp'
             )
 
-            # MCP route unauthenticated check (401)
+            # Step: MCP route unauthenticated check (401)
             res_mcp_unauth = client.post(f'/{srv_lower}/mcp')
             assert res_mcp_unauth.status_code == 401
 
-            # Cross-service token rejection by other services
+            # Step: Cross service token rejection
             for other_srv, other_app in zip(
                 SERVICES_SPEC, all_apps, strict=True
             ):
@@ -471,7 +486,7 @@ def test_extension_route_collisions_and_isolation(
     _setup_srv(monkeypatch, tmp_path, 'GMAIL', '8431')
     cfg = ServiceConfig.from_env('gmail')
 
-    # Colliding route extensions must be rejected on create_service_app
+    # Step: Colliding route extensions must be rejected on create_service_app
     for bad_path in (
         '/health',
         '/.well-known/oauth-protected-resource/gmail/mcp',
@@ -485,14 +500,14 @@ def test_extension_route_collisions_and_isolation(
         with pytest.raises(ValueError):
             create_service_app(cfg, extensions=[ext])
 
-    # Unsafe extension constructs are rejected
+    # Step: Unsafe extension constructs are rejected
     with pytest.raises(ValueError, match='Mount is not allowed'):
         create_service_app(cfg, extensions=[_MountExtension()])
 
     with pytest.raises(ValueError, match='WebSocketRoute is not allowed'):
         create_service_app(cfg, extensions=[_WebSocketExtension()])
 
-    # Non-colliding extension routes function in isolation
+    # Step: Independent extension routes
     ext1 = _CustomRouteExtension('/custom/probe1', 'tag1')
     app, server, state = create_service_app(cfg, extensions=[ext1])
     try:
@@ -500,7 +515,7 @@ def test_extension_route_collisions_and_isolation(
         res_unauth = client.get('/custom/probe1')
         assert res_unauth.status_code == 401
 
-        # Standard readonly token has insufficient scope for custom route
+        # Step: Standard readonly token has insufficient scope for custom route
         reg_std = state.register_client(('https://client.example.test/cb',))
         tok_std = state.issue_access_token(
             client_id=reg_std.client.client_id,
@@ -515,7 +530,7 @@ def test_extension_route_collisions_and_isolation(
             'WWW-Authenticate', ''
         )
 
-        # Full access token can access custom route
+        # Step: Full access token can access custom route
         reg_full = state.ensure_static_client(
             client_id='smoke-admin',
             redirect_uris=('https://client.example.test/cb',),

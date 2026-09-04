@@ -81,7 +81,6 @@ async def test_readonly_principal_only_sees_read_tools() -> None:
             },
         }
 
-        # Assert all mutations outside readonly set are checked
         assert set(forbidden_mutations.keys()) == (
             SHEETS_TOOL_NAMES - READONLY_SHEETS_TOOLS
         )
@@ -94,7 +93,6 @@ async def test_readonly_principal_only_sees_read_tools() -> None:
                 'Forbidden: tool is not permitted for this principal'
                 in str(exc_info.value)
             )
-            # Ensure fake gateway was NOT called for forbidden mutations
             assert len(gateway.calls) == calls_before
     finally:
         context.reset_request_context(token)

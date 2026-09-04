@@ -1,4 +1,4 @@
-"""Test Docs UTF-16 semantics."""
+"""Docs UTF16 behavior tests."""
 
 from __future__ import annotations
 

@@ -1,3 +1,5 @@
+"""Cutover CLI behavior tests."""
+
 import base64
 import hashlib
 import json
@@ -40,11 +42,13 @@ from google_workspace_mcp.cli.cutover import (
 
 @pytest.fixture
 def current_uid() -> int:
+    """Provide current UID."""
     return os.getuid()
 
 
 @pytest.fixture
 def env_dir(tmp_path: Path, current_uid: int) -> Path:
+    """Provide environment directory."""
     envs_path = tmp_path / 'etc_google_mcp'
     envs_path.mkdir(mode=0o700, parents=True)
     os.chmod(envs_path, 0o700)
@@ -72,6 +76,7 @@ def env_dir(tmp_path: Path, current_uid: int) -> Path:
 
 @pytest.fixture
 def state_root(tmp_path: Path, current_uid: int) -> Path:
+    """Provide state root."""
     root = tmp_path / 'state'
     root.mkdir(mode=0o700, parents=True)
     os.chmod(root, 0o700)
@@ -90,6 +95,7 @@ def state_root(tmp_path: Path, current_uid: int) -> Path:
 
 @pytest.fixture
 def identity_manifest(env_dir: Path, current_uid: int) -> IdentityManifest:
+    """Provide identity manifest."""
     return build_identity_manifest(env_dir, expected_uid=current_uid)
 
 
@@ -429,7 +435,7 @@ def test_assert_services_quiescent_systemd_active_check(
         '  sl  local_address rem_address   st\n', encoding='utf-8'
     )
 
-    # 1. Active unit raises CutoverError
+    # Step 1: Active unit raises CutoverError
     active_proc = MagicMock(returncode=0, stdout='active\n')
     with (
         patch('subprocess.run', return_value=active_proc),
@@ -443,7 +449,7 @@ def test_assert_services_quiescent_systemd_active_check(
             allow_non_linux=True,
         )
 
-    # 2. Inactive units pass
+    # Step 2: Inactive units pass
     inactive_proc = MagicMock(returncode=3, stdout='inactive\n')
     with patch('subprocess.run', return_value=inactive_proc):
         assert_services_quiescent(
@@ -454,7 +460,7 @@ def test_assert_services_quiescent_systemd_active_check(
             allow_non_linux=True,
         )
 
-    # 3. systemctl execution error raises CutoverError
+    # Step 3: systemctl execution error raises CutoverError
     with (
         patch(
             'subprocess.run',
@@ -488,6 +494,7 @@ def test_mutation_exclusion_detects_unmasked_instance(
     identity_manifest: IdentityManifest,
 ) -> None:
     def mock_masked(unit_name: str) -> bool:
+        """Return masked payload."""
         return unit_name != 'google-mcp@gmail.service'
 
     with (
@@ -663,8 +670,8 @@ def test_apply_reset_manifest_handles_root_env_and_service_state_uid(
     preview = build_reset_manifest(
         identity_manifest, state_root, expected_uid=current_uid
     )
-    # Rebuild uses expected_env_uid (default 0 or current_uid in tests),
-    # even when state directory owner is a service UID.
+    # Step: Use expected_env_uid during rebuild
+    # Step: Ignore service directory ownership
     with (
         patch(
             'google_workspace_mcp.cli.cutover.assert_services_quiescent',
@@ -940,11 +947,11 @@ def test_restore_offline_snapshot_preflight_prevents_partial_deletion(
         path=journal_path,
     )
 
-    # Corrupt the 5th service (docs) snapshot source file.
+    # Step: Corrupt the 5th service (docs) snapshot source file
     docs_snap_file = dest / 'docs' / 'oauth_state.sqlite3'
     docs_snap_file.write_bytes(b'corrupted-docs-snapshot')
 
-    # Seed identifiable content in services 1-4 destination state files.
+    # Step: Seed four destination state files
     for svc in ('gmail', 'calendar', 'drive', 'sheets'):
         (state_root / svc / 'oauth_state.sqlite3').write_bytes(
             f'preserved-{svc}'.encode()
@@ -974,7 +981,7 @@ def test_restore_offline_snapshot_preflight_prevents_partial_deletion(
             allow_non_linux=True,
         )
 
-    # Verify zero-deletion: services 1-4 destination files remain untouched!
+    # Step: Verify four destination files remain untouched
     for svc in ('gmail', 'calendar', 'drive', 'sheets'):
         db_path = state_root / svc / 'oauth_state.sqlite3'
         assert db_path.exists()
@@ -1034,6 +1041,7 @@ def test_restore_offline_snapshot_fchowns_restored_files(
     fchown_calls: list[tuple[int, int, int]] = []
 
     def mock_fchown(fd: int, uid: int, gid: int) -> None:
+        """Simulate ownership change."""
         fchown_calls.append((fd, uid, gid))
 
     with (
@@ -1242,7 +1250,7 @@ def test_cutover_journal_cross_digest_assertions_and_pre_gate_guard(
         worker_generation=1,
     )
 
-    # 1. Mismatched reset identity digest
+    # Step 1: Mismatched reset identity digest
     corrupt_reset = ResetManifest(
         state_root=reset_manifest.state_root,
         identity_digest='x' * 64,
@@ -1259,7 +1267,7 @@ def test_cutover_journal_cross_digest_assertions_and_pre_gate_guard(
             tmp_path / 'j.json',
         )
 
-    # 2. Mismatched snapshot identity digest
+    # Step 2: Mismatched snapshot identity digest
     corrupt_snap_id = SnapshotManifest(
         destination=snapshot.destination,
         identity_digest='x' * 64,
@@ -1278,7 +1286,7 @@ def test_cutover_journal_cross_digest_assertions_and_pre_gate_guard(
             tmp_path / 'j.json',
         )
 
-    # 3. Mismatched snapshot reset digest
+    # Step 3: Mismatched snapshot reset digest
     corrupt_snap_res = SnapshotManifest(
         destination=snapshot.destination,
         identity_digest=snapshot.identity_digest,
@@ -1295,7 +1303,7 @@ def test_cutover_journal_cross_digest_assertions_and_pre_gate_guard(
             tmp_path / 'j.json',
         )
 
-    # 4. Mismatched maintenance identity digest
+    # Step 4: Mismatched maintenance identity digest
     corrupt_att = MaintenanceAttestation(
         identity_digest='x' * 64,
         nginx_master_pid=attestation.nginx_master_pid,
@@ -1313,7 +1321,7 @@ def test_cutover_journal_cross_digest_assertions_and_pre_gate_guard(
             tmp_path / 'j.json',
         )
 
-    # 5. mark_gate_opened refuses transition from non-PRE_GATE
+    # Step 5: mark_gate_opened refuses transition from invalid PRE_GATE
     journal = create_cutover_journal(
         identity_manifest,
         reset_manifest,
@@ -1339,7 +1347,7 @@ def test_snapshot_and_restore_rebuild_live_identity_manifest(
     dest = tmp_path / 'snap_live'
     dest.mkdir(mode=0o700)
 
-    # Modify live env file before snapshot create
+    # Step: Modify live env file before snapshot create
     gmail_env = env_dir / 'gmail.env'
     content = gmail_env.read_text('utf-8').replace(
         'GMAIL_MCP_PORT=8431', 'GMAIL_MCP_PORT=8439'
@@ -1381,7 +1389,7 @@ def test_platform_enforcement_and_proc_net_tcp_fail_closed(
     dest = tmp_path / 'snap_plat'
     dest.mkdir(mode=0o700)
 
-    # 1. snapshot create platform enforcement
+    # Step 1: snapshot create platform enforcement
     with (
         patch('sys.platform', 'darwin'),
         patch(
@@ -1399,7 +1407,7 @@ def test_platform_enforcement_and_proc_net_tcp_fail_closed(
             allow_non_linux=False,
         )
 
-    # 2. snapshot restore platform enforcement
+    # Step 2: snapshot restore platform enforcement
     journal = CutoverJournal(
         path=tmp_path / 'j.json',
         state='PRE_GATE',
@@ -1439,7 +1447,7 @@ def test_platform_enforcement_and_proc_net_tcp_fail_closed(
             allow_non_linux=False,
         )
 
-    # 3. _check_proc_net_tcp fails closed on Linux when proc table is missing
+    # Step 3: Reject a missing Linux proc table
     missing_proc = tmp_path / 'nonexistent_proc_tcp'
     with (
         patch('sys.platform', 'linux'),
@@ -1460,7 +1468,7 @@ def test_atomic_secure_file_writing(tmp_path: Path) -> None:
     st = os.stat(target_file)
     assert (st.st_mode & 0o077) == 0
 
-    # Symlinked parent dir rejected
+    # Step: Symlinked parent dir rejected
     sym_dir = tmp_path / 'sym_dir'
     sym_dir.symlink_to(tmp_path)
     with pytest.raises(CutoverError, match='parent directory.*symlink'):
@@ -1498,16 +1506,16 @@ def test_verify_offline_snapshot_descriptor_relative_security(
             allow_non_linux=True,
         )
 
-    # Normal verification passes
+    # Step: Normal verification passes
     verify_offline_snapshot(snapshot, expected_uid=current_uid)
 
-    # 1. Missing marker fails
+    # Step 1: Missing marker fails
     marker = dest / '.complete'
     marker.unlink()
     with pytest.raises(CutoverError, match='completion marker'):
         verify_offline_snapshot(snapshot, expected_uid=current_uid)
 
-    # Restore marker with invalid content
+    # Step: Restore marker with invalid content
     marker.write_text('BAD', encoding='utf-8')
     os.chmod(marker, 0o600)
     with pytest.raises(
@@ -1517,7 +1525,7 @@ def test_verify_offline_snapshot_descriptor_relative_security(
     marker.write_text('OK\n', encoding='utf-8')
     os.chmod(marker, 0o600)
 
-    # 2. Corrupted file content fails sha256
+    # Step 2: Corrupted file content fails sha256
     gmail_snap = dest / 'gmail' / 'oauth_state.sqlite3'
     gmail_snap.write_bytes(b'corrupted')
     with pytest.raises(CutoverError, match='sha256 mismatch|size mismatch'):
@@ -1529,7 +1537,7 @@ def test_toctou_fstat_mismatch_during_read_and_hash(
     current_uid: int,
     tmp_path: Path,
 ) -> None:
-    # Test TOCTOU mismatch detection in _load_secure_json
+    # Step: Exercise secure read race
     test_json = tmp_path / 'secure.json'
     test_json.write_text('{"key": "val"}', encoding='utf-8')
     os.chmod(test_json, 0o600)
@@ -1538,11 +1546,12 @@ def test_toctou_fstat_mismatch_during_read_and_hash(
     call_count = 0
 
     def mock_fstat_changing(fd: int) -> os.stat_result:
+        """Simulate changing metadata."""
         nonlocal call_count
         res = orig_fstat(fd)
         call_count += 1
         if call_count > 1:
-            # Simulate inode or size mutation between before and after read
+            # Step: Mutate metadata after preflight
             return os.stat_result(
                 (
                     res.st_mode,
@@ -1580,6 +1589,7 @@ def test_mid_flight_quiescence_or_masking_violation_before_phase2(
     def mock_quiescent_race(
         identity: IdentityManifest, **kwargs: object
     ) -> None:
+        """Simulate quiescence race."""
         nonlocal check_count
         check_count += 1
         if check_count > 1:
@@ -1605,7 +1615,7 @@ def test_mid_flight_quiescence_or_masking_violation_before_phase2(
             expected_env_uid=current_uid,
         )
 
-    # Verify that destination files are NOT deleted on mid-flight failure!
+    # Step: Verify destination files remain untouched
     for svc in SERVICES:
         assert (state_root / svc / 'oauth_state.sqlite3').exists()
 
@@ -1711,7 +1721,7 @@ def test_cli_subcommands_json_output_and_secret_free(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # 1. identity preview
+    # Step 1: identity preview
     exit_code = main(
         [
             'identity',
@@ -1735,7 +1745,7 @@ def test_cli_subcommands_json_output_and_secret_free(
         identity_manifest_file, captured.out.encode('utf-8')
     )
 
-    # 2. reset preview
+    # Step 2: reset preview
     exit_code = main(
         [
             'reset',
@@ -1761,7 +1771,7 @@ def test_cli_subcommands_json_output_and_secret_free(
         reset_manifest_file, captured.out.encode('utf-8')
     )
 
-    # 3. maintenance attest
+    # Step 3: maintenance attest
     attestation_file = tmp_path / 'm.att'
     exit_code = main(
         [
@@ -1788,7 +1798,7 @@ def test_cli_subcommands_json_output_and_secret_free(
     att_data = json.loads(captured.out)
     assert 'digest' in att_data
 
-    # 4. snapshot create
+    # Step 4: snapshot create
     snap_dest = tmp_path / 'snap_dir'
     snap_dest.mkdir(mode=0o700)
     with (
@@ -1827,7 +1837,7 @@ def test_cli_subcommands_json_output_and_secret_free(
 
     snap_manifest_file = snap_dest / 'snapshot_manifest.json'
 
-    # 5. snapshot verify
+    # Step 5: snapshot verify
     exit_code = main(
         [
             'snapshot',
@@ -1841,7 +1851,7 @@ def test_cli_subcommands_json_output_and_secret_free(
     assert exit_code == 0
     _ = capsys.readouterr()
 
-    # 6. journal create
+    # Step 6: journal create
     journal_file = tmp_path / 'cutover.journal'
     exit_code = main(
         [
@@ -1868,7 +1878,7 @@ def test_cli_subcommands_json_output_and_secret_free(
     journal_data = json.loads(captured.out)
     assert journal_data['state'] == 'PRE_GATE'
 
-    # 7. reset apply
+    # Step 7: reset apply
     with (
         patch(
             'google_workspace_mcp.cli.cutover.assert_services_quiescent',
@@ -1899,7 +1909,7 @@ def test_cli_subcommands_json_output_and_secret_free(
     assert exit_code == 0
     _ = capsys.readouterr()
 
-    # 8. snapshot restore
+    # Step 8: snapshot restore
     with (
         patch(
             'google_workspace_mcp.cli.cutover.assert_services_quiescent',
@@ -1936,7 +1946,7 @@ def test_cli_subcommands_json_output_and_secret_free(
     assert exit_code == 0
     _ = capsys.readouterr()
 
-    # 9. journal mark-gate-opened
+    # Step 9: journal mark_gate_opened
     exit_code = main(
         [
             'journal',
@@ -1967,11 +1977,11 @@ def test_cli_rejects_symlinked_manifest_and_journal_inputs(
     symlinked_manifest = tmp_path / 'sym_manifest.json'
     symlinked_manifest.symlink_to(real_manifest)
 
-    # 1. Rejection in _load_secure_json directly
+    # Step 1: Rejection in _load_secure_json directly
     with pytest.raises(CutoverError, match='cannot be symlink'):
         _load_secure_json(symlinked_manifest, expected_uid=current_uid)
 
-    # 2. Rejection in CLI subcommand
+    # Step 2: Rejection in CLI subcommand
     exit_code = main(
         [
             'snapshot',

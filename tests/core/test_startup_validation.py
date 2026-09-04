@@ -1,3 +1,5 @@
+"""Startup validation behavior tests."""
+
 import importlib
 import sqlite3
 from pathlib import Path
@@ -25,6 +27,7 @@ def _setup_service_env(
     root: Path,
     service: str,
 ) -> tuple[Path, Path, Path, Path]:
+    """Configure service environment."""
     port = PORTS[service]
     prefix = service.upper()
     base_dir = root / service
@@ -169,12 +172,18 @@ def test_startup_validation_rejects_invalid_mcp_path(
 
 
 class _CollidingExtension(Extension):
+    """Model test extension."""
+
     def __init__(self, colliding_path: str, method: str = 'GET') -> None:
+        """Initialize test double."""
         self._colliding_path = colliding_path
         self._method = method
 
     def register_routes(self, app: Any) -> None:
+        """Register test routes."""
+
         async def dummy_endpoint(_: Request) -> JSONResponse:
+            """Provide dummy endpoint."""
             return JSONResponse({'status': 'collision'})
 
         app.routes.append(
@@ -233,6 +242,7 @@ def test_startup_success_invokes_uvicorn(
     captured_state: list[Any] = []
 
     def mock_uvicorn_run(app: Any, **kwargs: Any) -> None:
+        """Record server startup."""
         recorded_calls.append({'app': app, **kwargs})
         state = app.user_middleware[0].kwargs['oauth_state']
         captured_state.append(state)
@@ -273,6 +283,7 @@ def test_startup_uvicorn_exception_closes_oauth_state(
     captured_state: list[Any] = []
 
     def mock_uvicorn_run(app: Any, **kwargs: Any) -> None:
+        """Record server startup."""
         state = app.user_middleware[0].kwargs['oauth_state']
         captured_state.append(state)
         assert not state._closed
