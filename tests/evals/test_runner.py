@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from google_workspace_mcp.evals import runner as runner_module
 from google_workspace_mcp.evals.models import FixtureBindings, ServiceName
 from google_workspace_mcp.evals.normalizers import NormalizerName
 from google_workspace_mcp.evals.runner import (
@@ -507,6 +508,56 @@ async def test_runner_counts_and_sanitizes_mcp_failure(
     assert result.error_category == 'mcp_call'
     assert result.called_tools == ('drive_get_file',)
     assert result.mcp_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_runner_sanitizes_unexpected_execution_error(
+    monkeypatch: pytest.MonkeyPatch,
+    applied_bindings: FixtureBindings,
+) -> None:
+    secret = 'unexpected-private-error-a82f'
+    session = RecordingSession(
+        _drive_tools(),
+        {'drive_get_file': {'file_id': 'foreign'}},
+    )
+
+    def fail_normalization(*args: object, **kwargs: object) -> str:
+        """Raise one unexpected failure."""
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(
+        runner_module,
+        'normalize_answer',
+        fail_normalization,
+    )
+    runner = EvaluationRunner(
+        RecordingModel(
+            [
+                _tool_turn(
+                    ToolCall(
+                        'call-1',
+                        'drive_get_file',
+                        {'file_id': 'drive_ledger_file'},
+                    )
+                ),
+                _final_turn('1'),
+            ]
+        ),
+        RecordingSessionFactory(session),
+        applied_bindings,
+    )
+
+    result = await runner.run_pair(
+        ServiceName.DRIVE,
+        _pair(),
+        RunBudget(),
+    )
+
+    assert result.status == 'execution_error'
+    assert result.error_category == 'execution_error'
+    assert result.model_turns == 2
+    assert result.mcp_calls == 1
+    assert secret not in repr(result)
 
 
 @pytest.mark.asyncio
