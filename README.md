@@ -48,6 +48,7 @@ Detailed tool names, limits, concurrency, continuation, and error behavior are d
 - [Authentication and credential operations](docs/auth.md)
 - [Google Workspace integrations](docs/integrations.md)
 - [MCP protocol contract](docs/protocol.md)
+- [Evaluation suite](evals/README.md)
 - [Production deployment](deploy/README.md)
 
 ## Architecture

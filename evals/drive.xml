@@ -2,7 +2,7 @@
 <evaluation fixture_version="stage12-v1" service="drive">
   <qa_pair>
     <task_id>drive_01</task_id>
-    <question>Search Drive for the exact name Synthetic fixture crimson-grove-f6j1 and return the integer fixture folder count.</question>
+    <question>Call drive_search_files with exact_name Synthetic fixture crimson-grove-f6j1 and page_size 10. Return the integer file count.</question>
     <expected_answer>1</expected_answer>
     <normalizer>integer</normalizer>
     <fixture_refs><ref>drive_fixture_folder</ref></fixture_refs>
@@ -20,7 +20,7 @@
   </qa_pair>
   <qa_pair>
     <task_id>drive_03</task_id>
-    <question>List drive_fixture_folder and return the integer number of fixture files inside it.</question>
+    <question>Call drive_list_folder with folder_id drive_fixture_folder, page_size 10, and no page_token. Return the integer file count.</question>
     <expected_answer>2</expected_answer>
     <normalizer>integer</normalizer>
     <fixture_refs><ref>drive_fixture_folder</ref><ref>drive_note_file</ref><ref>drive_ledger_file</ref></fixture_refs>
@@ -74,7 +74,7 @@
   </qa_pair>
   <qa_pair>
     <task_id>drive_09</task_id>
-    <question>Search inside drive_fixture_folder for MIME type text/plain and return the integer fixture file count.</question>
+    <question>Call drive_search_files with parent_id drive_fixture_folder, mime_types containing only text/plain, and page_size 10. Return the integer file count.</question>
     <expected_answer>1</expected_answer>
     <normalizer>integer</normalizer>
     <fixture_refs><ref>drive_fixture_folder</ref><ref>drive_note_file</ref></fixture_refs>
@@ -83,7 +83,7 @@
   </qa_pair>
   <qa_pair>
     <task_id>drive_10</task_id>
-    <question>Search Drive for the exact name Synthetic ledger teal-harbor-n5s8.csv and return the integer fixture file count.</question>
+    <question>Call drive_search_files with exact_name Synthetic ledger teal-harbor-n5s8.csv and page_size 10. Return the integer file count.</question>
     <expected_answer>1</expected_answer>
     <normalizer>integer</normalizer>
     <fixture_refs><ref>drive_ledger_file</ref></fixture_refs>

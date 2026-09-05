@@ -34,6 +34,7 @@ dev = [
     'pytest-asyncio>=1.4,<2',
     'ruff>=0.16,<0.17',
     'mypy>=2.3,<3',
+    'anthropic>=1.3,<2',
 ]
 
 [build-system]
@@ -74,6 +75,8 @@ select = ['E', 'F', 'I', 'SIM', 'UP', 'S', 'G']
 'src/google_workspace_mcp/auth/state.py' = ['E501', 'SIM105', 'S101']
 # Google token URI allowance.
 'src/google_workspace_mcp/google_auth/credentials.py' = ['S105']
+# OAuth metadata method literal.
+'src/google_workspace_mcp/evals/adapters.py' = ['S105']
 # Credential security test allowances.
 'tests/core/test_google_auth.py' = ['S103', 'S107', 'S603']
 # Consent fixture defaults are the subject under test.

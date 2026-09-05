@@ -29,7 +29,7 @@
   </qa_pair>
   <qa_pair>
     <task_id>docs_04</task_id>
-    <question>Read all content from docs_primary_tab and return the integer number of nonempty text lines.</question>
+    <question>Call docs_read_content with document_id docs_primary, tab_id docs_primary_tab, start_index 1, max_blocks 10, and max_chars 200. Return the integer number of nonempty text lines.</question>
     <expected_answer>3</expected_answer>
     <normalizer>integer</normalizer>
     <fixture_refs><ref>docs_primary</ref><ref>docs_primary_tab</ref></fixture_refs>
@@ -74,7 +74,7 @@
   </qa_pair>
   <qa_pair>
     <task_id>docs_09</task_id>
-    <question>Read docs_primary_tab and return whether any fixture paragraph has a bullet marker. Return true or false.</question>
+    <question>Call docs_read_content with document_id docs_primary, tab_id docs_primary_tab, start_index 1, max_blocks 10, and max_chars 200. Return whether any returned fixture paragraph has a non-null bullet field as true or false.</question>
     <expected_answer>false</expected_answer>
     <normalizer>boolean</normalizer>
     <fixture_refs><ref>docs_primary</ref><ref>docs_primary_tab</ref></fixture_refs>

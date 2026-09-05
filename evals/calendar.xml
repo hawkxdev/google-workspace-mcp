@@ -2,7 +2,7 @@
 <evaluation fixture_version="stage12-v1" service="calendar">
   <qa_pair>
     <task_id>calendar_01</task_id>
-    <question>Search the primary fixture calendar from 2027-02-01T00:00:00Z through 2027-03-01T00:00:00Z for the exact marker violet-ridge-h8p2. Return the integer event count.</question>
+    <question>Call calendar_search_events with calendar_id calendar_primary, query violet-ridge-h8p2, time_min 2027-02-01T00:00:00Z, time_max 2027-03-01T00:00:00Z, and page_size 10. Return the integer item count.</question>
     <expected_answer>1</expected_answer>
     <normalizer>integer</normalizer>
     <fixture_refs><ref>calendar_event_timed</ref></fixture_refs>
@@ -56,7 +56,7 @@
   </qa_pair>
   <qa_pair>
     <task_id>calendar_07</task_id>
-    <question>List instances of calendar_event_recurring from 2027-02-16T00:00:00Z through 2027-02-20T00:00:00Z and return the integer instance count.</question>
+    <question>Call calendar_list_event_instances with calendar_id calendar_primary, recurring_event_id calendar_event_recurring, time_min 2027-02-16T00:00:00Z, time_max 2027-02-20T00:00:00Z, and page_size 10. Return the integer item count.</question>
     <expected_answer>3</expected_answer>
     <normalizer>integer</normalizer>
     <fixture_refs><ref>calendar_event_recurring</ref></fixture_refs>

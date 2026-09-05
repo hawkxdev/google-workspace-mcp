@@ -2,12 +2,12 @@
 <evaluation fixture_version="stage12-v1" service="gmail">
   <qa_pair>
     <task_id>gmail_01</task_id>
-    <question>Use gmail_list_drafts and count only the fixture draft referenced as gmail_draft_cobalt. Return the integer count.</question>
-    <expected_answer>1</expected_answer>
-    <normalizer>integer</normalizer>
-    <fixture_refs><ref>gmail_draft_cobalt</ref></fixture_refs>
-    <allowed_tools><tool>gmail_list_drafts</tool></allowed_tools>
-    <minimum_mcp_calls>1</minimum_mcp_calls>
+    <question>First call gmail_list_drafts with page_size 1 and no page_token. Then read gmail_draft_cobalt and return its plain text body exactly.</question>
+    <expected_answer>Private evaluation draft marker: cobalt-pine-k7v3.</expected_answer>
+    <normalizer>exact_string</normalizer>
+    <fixture_refs><ref>gmail_draft_cobalt</ref><ref>gmail_draft_message_cobalt</ref></fixture_refs>
+    <allowed_tools><tool>gmail_list_drafts</tool><tool>gmail_get_draft</tool></allowed_tools>
+    <minimum_mcp_calls>2</minimum_mcp_calls>
   </qa_pair>
   <qa_pair>
     <task_id>gmail_02</task_id>
@@ -38,8 +38,8 @@
   </qa_pair>
   <qa_pair>
     <task_id>gmail_05</task_id>
-    <question>Read gmail_message_alpha_reply and return its plain text body exactly.</question>
-    <expected_answer>Reply message marker: amber-lake-q4n8-reply-z9.</expected_answer>
+    <question>Read gmail_message_alpha_reply with marker amber-lake-q4n8-reply-z9 and return its subject exactly.</question>
+    <expected_answer>Re: Synthetic conversation amber-lake-q4n8</expected_answer>
     <normalizer>exact_string</normalizer>
     <fixture_refs><ref>gmail_message_alpha_reply</ref></fixture_refs>
     <allowed_tools><tool>gmail_get_message</tool></allowed_tools>

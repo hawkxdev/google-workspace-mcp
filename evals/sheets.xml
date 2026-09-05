@@ -47,7 +47,7 @@
   </qa_pair>
   <qa_pair>
     <task_id>sheets_06</task_id>
-    <question>Read Inputs!C2:C4 from sheets_primary with unformatted rendering and return the sum with one decimal place.</question>
+    <question>Call sheets_read_range for spreadsheet_id sheets_primary, range_name Inputs!C2:C4, render_mode unformatted, and date_time_mode serial_number. Return the sum with one decimal place.</question>
     <expected_answer>25.0</expected_answer>
     <normalizer>decimal_1</normalizer>
     <fixture_refs><ref>sheets_primary</ref><ref>sheets_inputs_tab</ref></fixture_refs>
@@ -56,29 +56,29 @@
   </qa_pair>
   <qa_pair>
     <task_id>sheets_07</task_id>
-    <question>Read Inputs!B3 from sheets_primary with formatted rendering and return the cell value exactly.</question>
-    <expected_answer>amber</expected_answer>
+    <question>Read sheets_primary metadata and return the sheet_type of the Inputs sheet exactly.</question>
+    <expected_answer>GRID</expected_answer>
     <normalizer>exact_string</normalizer>
     <fixture_refs><ref>sheets_primary</ref><ref>sheets_inputs_tab</ref></fixture_refs>
-    <allowed_tools><tool>sheets_read_range</tool></allowed_tools>
+    <allowed_tools><tool>sheets_get_spreadsheet</tool></allowed_tools>
     <minimum_mcp_calls>1</minimum_mcp_calls>
   </qa_pair>
   <qa_pair>
     <task_id>sheets_08</task_id>
-    <question>Read Summary!B2 from sheets_primary with formula rendering and return the formula exactly.</question>
+    <question>Call sheets_batch_read_ranges for spreadsheet_id sheets_primary, ranges containing only Summary!B2, render_mode formula, and date_time_mode serial_number. Return the single cell formula exactly.</question>
     <expected_answer>=COUNTA(Inputs!B2:B4)</expected_answer>
     <normalizer>exact_string</normalizer>
     <fixture_refs><ref>sheets_primary</ref><ref>sheets_summary_tab</ref></fixture_refs>
-    <allowed_tools><tool>sheets_read_range</tool></allowed_tools>
+    <allowed_tools><tool>sheets_batch_read_ranges</tool></allowed_tools>
     <minimum_mcp_calls>1</minimum_mcp_calls>
   </qa_pair>
   <qa_pair>
     <task_id>sheets_09</task_id>
-    <question>Read Summary!B3 from sheets_primary with formula rendering and return the formula exactly.</question>
+    <question>Call sheets_batch_read_ranges for spreadsheet_id sheets_primary, ranges containing only Summary!B3, render_mode formula, and date_time_mode serial_number. Return the single cell formula exactly.</question>
     <expected_answer>=SUM(Inputs!C2:C4)</expected_answer>
     <normalizer>exact_string</normalizer>
     <fixture_refs><ref>sheets_primary</ref><ref>sheets_summary_tab</ref></fixture_refs>
-    <allowed_tools><tool>sheets_read_range</tool></allowed_tools>
+    <allowed_tools><tool>sheets_batch_read_ranges</tool></allowed_tools>
     <minimum_mcp_calls>1</minimum_mcp_calls>
   </qa_pair>
   <qa_pair>

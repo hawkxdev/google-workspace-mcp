@@ -159,7 +159,8 @@ def test_service_pairs_use_public_readonly_contract(service: str) -> None:
         assert len(allowed_tools) == len(set(allowed_tools))
         assert all(item.tag == 'tool' for item in allowed_tools_element)
         assert set(allowed_tools) <= READONLY_TOOLS[service]
-        assert minimum_calls == '1'
+        assert minimum_calls is not None
+        assert len(allowed_tools) <= int(minimum_calls) <= 12
         if normalizer == 'boolean':
             assert expected_answer in {'true', 'false'}
         elif normalizer == 'integer':
