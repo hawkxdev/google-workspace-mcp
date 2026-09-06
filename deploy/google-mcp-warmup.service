@@ -1,0 +1,35 @@
+[Unit]
+Description=Google Workspace MCP credential warm-up
+Documentation=https://github.com/hawkxdev/google-workspace-mcp
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=googlemcp
+Group=googlemcp
+WorkingDirectory=/opt/google-workspace-mcp/app
+Environment=HOME=/var/lib/google-workspace-mcp
+
+# All five service environments are loaded: the warm-up walks every
+# service in one run, and each credential path is named by its own
+# prefixed variable. Without them the command would fall back to the
+# packaged default path, find no credential and fail loudly.
+EnvironmentFile=/etc/google-mcp/gmail.env
+EnvironmentFile=/etc/google-mcp/calendar.env
+EnvironmentFile=/etc/google-mcp/drive.env
+EnvironmentFile=/etc/google-mcp/sheets.env
+EnvironmentFile=/etc/google-mcp/docs.env
+
+ExecStart=/opt/google-workspace-mcp/app/.venv/bin/google-mcp-warmup
+
+# A failed warm-up must not touch the running services.
+Restart=no
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true

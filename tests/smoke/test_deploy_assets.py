@@ -10,6 +10,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEPLOY_ROOT = PROJECT_ROOT / 'deploy'
 ENV_ROOT = DEPLOY_ROOT / 'env'
 SYSTEMD_UNIT = DEPLOY_ROOT / 'google-mcp@.service'
+WARMUP_UNIT = DEPLOY_ROOT / 'google-mcp-warmup.service'
+WARMUP_TIMER = DEPLOY_ROOT / 'google-mcp-warmup.timer'
 SERVICES = {
     'gmail': 8431,
     'calendar': 8432,
@@ -161,3 +163,64 @@ def test_systemd_template_runs_isolated_service_instances() -> None:
         'mcp.hawkxdev.dev',
     ):
         assert donor_policy not in unit
+
+
+def _directives(unit: Path) -> list[tuple[str, str]]:
+    """Read unit directives as ordered key value pairs."""
+    pairs: list[tuple[str, str]] = []
+    for raw_line in unit.read_text(encoding='utf-8').splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#') or line.startswith('['):
+            continue
+        key, separator, value = line.partition('=')
+        assert separator == '=', f'invalid unit line: {raw_line!r}'
+        pairs.append((key.strip(), value.strip()))
+    return pairs
+
+
+def test_warmup_unit_runs_once_as_the_service_account() -> None:
+    directives = dict(_directives(WARMUP_UNIT))
+
+    assert directives['Type'] == 'oneshot'
+    assert directives['User'] == 'googlemcp'
+    assert directives['Group'] == 'googlemcp'
+    # A warm-up that failed must not be retried into the services.
+    assert directives['Restart'] == 'no'
+    assert directives['ExecStart'] == (
+        '/opt/google-workspace-mcp/app/.venv/bin/google-mcp-warmup'
+    )
+
+
+def test_warmup_unit_loads_every_service_environment() -> None:
+    loaded = [
+        value
+        for key, value in _directives(WARMUP_UNIT)
+        if key == 'EnvironmentFile'
+    ]
+
+    assert loaded == [f'/etc/google-mcp/{service}.env' for service in SERVICES]
+
+
+def test_warmup_timer_uses_a_schedule_oneshot_supports() -> None:
+    directives = dict(_directives(WARMUP_TIMER))
+
+    # OnUnitActiveSec never fires for Type=oneshot: such a unit does not
+    # reach the active state. This pins the property, not the wording.
+    assert 'OnUnitActiveSec' not in directives
+    assert directives['OnCalendar'] == 'monthly'
+    # Persistent is calendar-only and required here: a skipped month
+    # must be caught up, because the provider counts inactivity in
+    # months.
+    assert directives['Persistent'] == 'true'
+    assert directives['Unit'] == WARMUP_UNIT.name
+    assert directives['WantedBy'] == 'timers.target'
+
+
+def test_warmup_interval_keeps_margin_against_the_provider_threshold() -> None:
+    directives = dict(_directives(WARMUP_TIMER))
+    calendar = directives['OnCalendar']
+    monthly_forms = {'monthly', '*-*-01 00:00:00'}
+
+    # The provider retires an unused client or refresh token after six
+    # months. Anything coarser than monthly spends the margin.
+    assert calendar in monthly_forms

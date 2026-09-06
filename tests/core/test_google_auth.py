@@ -111,6 +111,7 @@ def _credentials(
     refresh_token: str = 'refresh-token',
     token_uri: str = 'https://oauth2.googleapis.com/token',
     scopes: tuple[str, ...] = (),
+    expiry: datetime | None = None,
 ) -> GoogleCredentials:
     """Build synthetic Google credentials."""
     return GoogleCredentials(
@@ -120,6 +121,7 @@ def _credentials(
         client_id='client-id',
         client_secret='client-secret',
         scopes=scopes,
+        expiry=expiry,
     )
 
 
@@ -397,6 +399,46 @@ def test_refresh_preserves_scopes_when_response_omits_them(
         )
         refreshed = store.refresh()
         assert refreshed.scopes == (required,)
+    finally:
+        server.close()
+
+
+def test_refresh_skips_provider_while_token_is_valid(tmp_path: Path) -> None:
+    server = FakeTokenServer()
+    token_path = tmp_path / 'token.json'
+    try:
+        store = GoogleCredentialStore(token_path)
+        store.save(
+            _credentials(
+                token_uri=server.token_uri,
+                expiry=datetime.now(UTC) + timedelta(hours=1),
+            )
+        )
+        before = token_path.stat().st_mtime_ns
+        kept = store.refresh()
+        assert server.request_count == 0
+        assert kept.token == 'access-token'
+        assert token_path.stat().st_mtime_ns == before
+    finally:
+        server.close()
+
+
+def test_refresh_force_exchanges_token_while_valid(tmp_path: Path) -> None:
+    server = FakeTokenServer()
+    token_path = tmp_path / 'token.json'
+    try:
+        store = GoogleCredentialStore(token_path)
+        store.save(
+            _credentials(
+                token_uri=server.token_uri,
+                expiry=datetime.now(UTC) + timedelta(hours=1),
+            )
+        )
+        before = token_path.stat().st_mtime_ns
+        refreshed = store.refresh(force=True)
+        assert server.request_count == 1
+        assert refreshed.token == 'refreshed-token-payload'
+        assert token_path.stat().st_mtime_ns != before
     finally:
         server.close()
 

@@ -167,7 +167,12 @@ class FakeStore(GoogleCredentialStore):
             scopes=DRIVE_SCOPES,
         )
 
-    def refresh(self, request: Any = None) -> GoogleCredentials:
+    def refresh(
+        self,
+        request: Any = None,
+        *,
+        force: bool = False,
+    ) -> GoogleCredentials:
         """Refresh fake resource."""
         return self.credentials
 

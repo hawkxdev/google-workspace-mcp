@@ -117,7 +117,12 @@ class FakeStore(GoogleCredentialStore):
             ),
         )
 
-    def refresh(self, request: Any = None) -> GoogleCredentials:
+    def refresh(
+        self,
+        request: Any = None,
+        *,
+        force: bool = False,
+    ) -> GoogleCredentials:
         """Refresh fake resource."""
         self.calls += 1
         if self.fail:

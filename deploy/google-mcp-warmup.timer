@@ -1,0 +1,20 @@
+[Unit]
+Description=Monthly Google Workspace MCP credential warm-up
+Documentation=https://github.com/hawkxdev/google-workspace-mcp
+
+[Timer]
+# Monthly against a six month provider threshold keeps a fivefold
+# margin and survives several skipped runs.
+#
+# OnCalendar rather than OnUnitActiveSec: the latter is not supported
+# for Type=oneshot, which never reaches the active state
+# (systemd#21600). Persistent=true is likewise calendar-only, and it is
+# wanted here: a missed month must be caught up, because the counter
+# this job resets is measured by the provider in months.
+OnCalendar=monthly
+RandomizedDelaySec=1h
+Persistent=true
+Unit=google-mcp-warmup.service
+
+[Install]
+WantedBy=timers.target

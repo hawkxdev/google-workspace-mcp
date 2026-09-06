@@ -328,8 +328,20 @@ class GoogleCredentialStore:
         self._validate_scopes(credentials.scopes)
         return credentials
 
-    def refresh(self, request: Any = None) -> GoogleCredentials:
-        """Refresh authorized Google credentials."""
+    def refresh(
+        self,
+        request: Any = None,
+        *,
+        force: bool = False,
+    ) -> GoogleCredentials:
+        """Refresh authorized Google credentials.
+
+        Set force to exchange the refresh token even while the stored
+        access token is still valid. Serving requests keep the default,
+        which avoids a provider round trip per call; scheduled warm-up
+        needs the exchange itself, because Google measures inactivity by
+        token exchanges rather than by use of an issued access token.
+        """
         validate_credential_path(self._path, self._download_path)
         directory_fd = self._open_target_dir_fd()
         try:
@@ -338,7 +350,11 @@ class GoogleCredentialStore:
                 if stored is None:
                     raise GoogleAuthError('credentials are not configured')
                 library_credentials = stored.to_google_credentials()
-                if stored.expiry is not None and library_credentials.valid:
+                if (
+                    not force
+                    and stored.expiry is not None
+                    and library_credentials.valid
+                ):
                     self._validate_scopes(stored.scopes)
                     return stored
                 resolved_request = request or Request()

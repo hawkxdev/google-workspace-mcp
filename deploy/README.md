@@ -191,6 +191,50 @@ ss -tlnp
 
 Each health response must name its service, and each loopback port must belong to a `googlemcp` process.
 
+## Install the credential warm-up timer
+
+Google retires an OAuth client and a refresh token after six months of inactivity, and it counts token exchanges rather than use of an already issued access token. Docs and Sheets are the least called services here, so they reach that threshold first, and the failure arrives on a date chosen by the calendar rather than by an operator. The warm-up forces one exchange per service and follows it with one minimal read-only call.
+
+```bash
+set -euo pipefail
+install -o root -g root -m 0644 \
+  deploy/google-mcp-warmup.service \
+  /etc/systemd/system/google-mcp-warmup.service
+install -o root -g root -m 0644 \
+  deploy/google-mcp-warmup.timer \
+  /etc/systemd/system/google-mcp-warmup.timer
+systemctl daemon-reload
+systemctl enable --now google-mcp-warmup.timer
+```
+
+The timer is calendar based on purpose. `OnUnitActiveSec` is not supported for `Type=oneshot`, because such a unit never reaches the active state, and `Persistent=true` works only with a calendar schedule. `Persistent=true` is wanted here so a month missed while the host was down is caught up.
+
+**Treat enabling this timer as a possible immediate run.** With `Persistent=true` a missed occurrence can fire during `daemon-reload` or when the timer is armed. That is harmless for a warm-up, which is idempotent, but it means the first token exchange may happen at install time rather than on the first of next month. Inspect the schedule before assuming otherwise:
+
+```bash
+systemctl list-timers google-mcp-warmup.timer --all
+systemctl show google-mcp-warmup.timer -p LastTriggerUSec -p NextElapseUSecRealtime
+```
+
+Verify one run by hand and read what it reported:
+
+```bash
+set -euo pipefail
+systemctl start google-mcp-warmup.service
+systemctl show google-mcp-warmup.service -p Result --value   # expect: success
+journalctl -u google-mcp-warmup.service -n 20 --no-pager
+```
+
+Each successful service prints one JSON line naming the service, its credential path, the probe that was performed and the new expiry. A failing service prints a JSON line on stderr with a classified, secret-free reason and the run exits non-zero without touching the running services.
+
+The exchange itself is proven by the credential file, not by the exit code:
+
+```bash
+stat -c '%n %y' /var/lib/google-workspace-mcp/*/google_token.json
+```
+
+Every modification time must be newer than the run. A file that did not move means the exchange did not happen for that service.
+
 ## Install nginx configuration
 
 Production uses a modular nginx layout separating static assets, upstreams, active service routing, and maintenance mode:

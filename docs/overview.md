@@ -269,13 +269,22 @@ google-mcp-sheets
 google-mcp-docs
 ```
 
-Google authorization, OAuth administration, and cutover safety use dedicated commands:
+Google authorization, OAuth administration, cutover safety, and credential
+warm-up use dedicated commands:
 
 ```text
 google-mcp-authorize
 google-mcp-oauth
 google-mcp-cutover
+google-mcp-warmup
 ```
+
+`google-mcp-warmup` forces one Google token exchange per service and follows it
+with one minimal read-only call. Google retires an OAuth client and invalidates
+a refresh token after six months of inactivity, counting token exchanges rather
+than API use, so a rarely called service would otherwise lose access on a date
+chosen by the calendar. It is driven by a monthly systemd timer; see
+`deploy/README.md`.
 ## Source Layout
 
 ```text

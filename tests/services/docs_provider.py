@@ -393,7 +393,12 @@ class FakeDocsStore(GoogleCredentialStore):
             scopes=('https://www.googleapis.com/auth/documents',),
         )
 
-    def refresh(self, request: Any = None) -> GoogleCredentials:
+    def refresh(
+        self,
+        request: Any = None,
+        *,
+        force: bool = False,
+    ) -> GoogleCredentials:
         """Record credential refresh."""
         self.calls += 1
         return self.credentials

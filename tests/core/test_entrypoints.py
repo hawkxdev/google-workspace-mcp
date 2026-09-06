@@ -32,6 +32,20 @@ def test_entrypoint_main_invokes_run_server(
     mock_run_server.assert_called_once_with()
 
 
+def test_warmup_console_script_is_declared() -> None:
+    import tomllib
+    from pathlib import Path
+
+    pyproject = Path(__file__).resolve().parents[2] / 'pyproject.toml'
+    scripts = tomllib.loads(pyproject.read_text(encoding='utf-8'))['project'][
+        'scripts'
+    ]
+
+    assert (
+        scripts['google-mcp-warmup'] == 'google_workspace_mcp.cli.warmup:main'
+    )
+
+
 def test_sdk_server_contract_is_present() -> None:
     from mcp.server.mcpserver import MCPServer
     from mcp.server.mcpserver.exceptions import ToolError

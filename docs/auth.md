@@ -171,6 +171,8 @@ Each service owns one Google credential with an exact scope set. The credential 
 
 The provider gateway refreshes Google access tokens internally. It never returns access tokens or refresh tokens to MCP clients.
 
+That refresh is skipped while the stored access token is still valid, which is correct for serving but resets no provider counter: Google measures inactivity by token exchanges, not by API use, and retires an OAuth client or a refresh token after six months of it. The `google-mcp-warmup` command therefore forces one exchange per service on a monthly timer; see [Production Deployment](../deploy/README.md).
+
 See [Google Cloud and OAuth Setup](google-cloud-setup.md) for Google project configuration and initial consent.
 
 ## OAuth Administration CLI

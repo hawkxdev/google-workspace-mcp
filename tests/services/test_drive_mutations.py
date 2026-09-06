@@ -122,7 +122,12 @@ class FakeStore(GoogleCredentialStore):
         """Initialize test double."""
         pass
 
-    def refresh(self, request: Any = None) -> GoogleCredentials:
+    def refresh(
+        self,
+        request: Any = None,
+        *,
+        force: bool = False,
+    ) -> GoogleCredentials:
         """Refresh fake resource."""
         return GoogleCredentials(token='fake_token')
 
