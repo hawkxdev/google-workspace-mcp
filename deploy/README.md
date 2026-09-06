@@ -18,8 +18,10 @@ Running these commands changes a production host. Review the rendered files and 
 | `/var/lib/google-workspace-mcp` | `googlemcp:googlemcp`, `0700` | Service home and state root |
 | `/var/lib/google-workspace-mcp/<service>` | `googlemcp:googlemcp`, `0700` | OAuth state, Google credential, and downloads |
 | `/var/lib/google-workspace-mcp/<service>/google_token.json` | `googlemcp:googlemcp`, `0600` | Existing service Google credential |
-| `/var/log/google-workspace-mcp/<service>` | `googlemcp:googlemcp`, `0700` | Service audit directory |
+| `/var/lib/google-workspace-mcp/<service>/audit.jsonl` | `googlemcp:googlemcp`, `0600` | Service audit log |
 | `/etc/systemd/system/google-mcp@.service` | `root:root`, `0644` | Five systemd instances |
+
+The audit log lives under `/var/lib`, not `/var/log`. Audit path validation rejects any ancestor that is group or world writable, and a distribution `/var/log` is group writable for `syslog`. Placing the audit log there starts once and then fails every later start, including the first boot after a reboot.
 
 The service user cannot modify the root owned source, virtual environment, managed Python, or public tree. `ProtectSystem=full` protects system paths but does not make `/opt` read only. The ownership and modes above provide that boundary.
 
@@ -70,8 +72,7 @@ install -d -o root -g root -m 0700 /etc/google-mcp
 for service in gmail calendar drive sheets docs; do
   install -d -o googlemcp -g googlemcp -m 0700 \
     "/var/lib/google-workspace-mcp/$service" \
-    "/var/lib/google-workspace-mcp/$service/downloads" \
-    "/var/log/google-workspace-mcp/$service"
+    "/var/lib/google-workspace-mcp/$service/downloads"
 done
 ```
 

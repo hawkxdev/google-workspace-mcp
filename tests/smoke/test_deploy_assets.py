@@ -72,7 +72,7 @@ def test_environment_examples_match_service_contract() -> None:
         expected_paths = {
             f'{state_root}/oauth_state.sqlite3',
             f'{state_root}/google_token.json',
-            f'/var/log/google-workspace-mcp/{service}/audit.jsonl',
+            f'{state_root}/audit.jsonl',
             f'{state_root}/downloads',
         }
         actual_paths = {
@@ -116,9 +116,7 @@ def test_environment_examples_build_runtime_configs(
         state_root = Path(f'/var/lib/google-workspace-mcp/{service}')
         assert config.oauth_state_path == state_root / 'oauth_state.sqlite3'
         assert config.google_token_path == state_root / 'google_token.json'
-        assert config.audit_log_path == Path(
-            f'/var/log/google-workspace-mcp/{service}/audit.jsonl'
-        )
+        assert config.audit_log_path == state_root / 'audit.jsonl'
         assert config.download_path == state_root / 'downloads'
 
 

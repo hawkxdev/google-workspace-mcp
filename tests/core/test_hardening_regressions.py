@@ -329,6 +329,23 @@ def test_validate_audit_path_rejects_group_or_world_accessible_directory(
         validate_audit_path(loose / 'audit.jsonl', downloads)
 
 
+def test_validate_audit_path_rejects_group_writable_ancestor(
+    tmp_path: Path,
+) -> None:
+    """Reject the /var/log shape: group-writable, not world-writable."""
+    downloads = tmp_path / 'downloads'
+    downloads.mkdir(mode=0o700)
+    varlog = tmp_path / 'varlog'
+    varlog.mkdir()
+    os.chmod(varlog, 0o775)
+    target = varlog / 'service'
+    target.mkdir(mode=0o700)
+    os.chmod(target, 0o700)
+
+    with pytest.raises(ValueError, match='insecure audit path ancestor'):
+        validate_audit_path(target / 'audit.jsonl', downloads)
+
+
 def test_audit_logger_rejects_existing_open_directory(
     tmp_path: Path,
 ) -> None:
