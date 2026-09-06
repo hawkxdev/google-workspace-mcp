@@ -326,13 +326,10 @@ The `google-mcp-cutover` CLI enforces safety gates during cutover and maintenanc
    uv run --no-sync google-mcp-cutover journal mark-gate-opened --journal journal.json --confirm-sha256 <digest>
    ```
 
-Ingress verification is automated via `deploy/check-cutover-ingress.sh`:
+Ingress verification is automated via `deploy/check-cutover-ingress.sh`. The `candidate` argument validates against the loopback candidate on port 9443 before the cutover; the `public` argument validates against public HTTPS after it.
 
 ```bash
-# Pre-cutover validation against loopback candidate port 9443:
 ./deploy/check-cutover-ingress.sh candidate
-
-# Post-cutover validation against public HTTPS:
 ./deploy/check-cutover-ingress.sh public
 ```
 

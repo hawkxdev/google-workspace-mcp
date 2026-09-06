@@ -1,4 +1,4 @@
-# Managed synthetic fixtures for Stage 12
+# Managed synthetic fixtures
 
 ## Purpose and public boundary
 
@@ -88,7 +88,7 @@ uv run --no-sync python -m google_workspace_mcp.evals run \
   --evals-dir evals \
   --bindings ../private/evals/bindings.json \
   --oauth-dir ../private/evals/oauth \
-  --evidence ../docs/evidence/2026-09-05-stage12-evaluation.md \
+  --evidence ../evidence/evaluation-run.md \
   --gmail-url https://mcp.hawkxdev.dev/gmail/mcp \
   --calendar-url https://mcp.hawkxdev.dev/calendar/mcp \
   --drive-url https://mcp.hawkxdev.dev/drive/mcp \
@@ -124,7 +124,7 @@ The owner creates the registry `private/evals/bindings.json` before the first ap
 
 `planned` means seeding has not finished. After every successful request the write gate atomically appends the operation name to `applied_operations` and records the returned identifiers in `objects`: the write goes through a temporary file in the same directory, `fsync`, `os.replace`, and a directory `fsync`, so an interrupted process never leaves the registry unreadable. `applied` means all 14 write operations are registered but readiness is not yet confirmed. `ready` is permitted only after a complete read pass over every logical reference.
 
-If the registry already holds some objects or operations, re-application is refused. A fresh preview then lists every remaining operation, marks a partially bound composite result as `blocked_partial_output`, and requires the owner to review the registry by hand. No account-wide search is performed to guess state. Fixture cleanup and deletion are out of scope for Stage 12.
+If the registry already holds some objects or operations, re-application is refused. A fresh preview then lists every remaining operation, marks a partially bound composite result as `blocked_partial_output`, and requires the owner to review the registry by hand. No account-wide search is performed to guess state. Fixture cleanup and deletion are out of scope for this suite.
 
 ## Full write preview
 
