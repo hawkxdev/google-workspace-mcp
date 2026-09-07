@@ -2,7 +2,7 @@
 
 This directory contains production assets for five isolated Google Workspace MCP services. The services share one package and one HTTPS virtual host, but each process owns its port, service-base issuer, canonical protected resource, OAuth state, Google credential, audit log, download directory, and environment file.
 
-Production revision `7bac940` is deployed as five isolated loopback services behind the public HTTPS vhost. The cutover procedure and safety assets describe the transition mechanism; no cutover has occurred yet.
+The services run as five isolated loopback processes behind the public HTTPS vhost, on the resource identity model the cutover procedure below describes. Which revision a host actually carries is answered by the `REVISION` marker written during delivery, not by this document: a deployment target moves independently of the tree you are reading.
 
 Running these commands changes a production host. Review the rendered files and the rollback procedure before execution. Repository checkout, package publication, credential creation, DNS changes, certificate issuance, firewall changes, and deployment are not automated by these assets.
 

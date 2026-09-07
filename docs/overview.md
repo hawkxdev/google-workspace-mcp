@@ -362,7 +362,7 @@ Each service then requires its own service-prefixed runtime configuration before
 ## Current Boundaries
 
 - The project is pre-alpha.
-- Production revision `7bac940` is deployed through five isolated loopback processes.
+- A deployment runs through five isolated loopback processes; the revision a host carries is recorded in its `REVISION` marker.
 - Production Google credentials remain server-only in per-service owner-only files.
 - The public HTTPS vhost serves static pages and five path-scoped MCP and OAuth runtime surfaces.
 - Google OAuth publishing and Google verification are separate states.
