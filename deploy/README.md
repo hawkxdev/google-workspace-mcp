@@ -96,6 +96,8 @@ git archive "$REVISION" \
     | sort -z \
     | xargs -0 shasum -a 256
 ) > "$PAYLOAD.sha256"
+wc -l < "$PAYLOAD.sha256"
+test -s "$PAYLOAD.sha256"
 tar -C "$PAYLOAD" -cf - . \
   | ssh google-mcp-host \
       'tar -xf - -C /opt/google-workspace-mcp/app'
@@ -106,6 +108,8 @@ ssh google-mcp-host \
    sha256sum -c /root/google-mcp-payload.sha256 && \
    rm -f /root/google-mcp-payload.sha256'
 ```
+
+Count the manifest before the first upload. An archive built from a wrong tree-ish produces an empty payload that still travels through `tar`, `sha256sum -c` and `scp` with a zero exit status, so emptiness has to be visible before delivery rather than after it. `test -s` decides it instead of the operator's eye, which has no reason to be on that output at that moment.
 
 Use a separate SSH call for activation. Do not combine a piped payload with a here document because both require SSH standard input. Do not use `rsync --delete` on `/opt/google-workspace-mcp`.
 
@@ -129,10 +133,13 @@ Record the delivered revision on the host, so that what is running can be identi
 
 ```bash
 set -euo pipefail
-printf '%s\n' "$REVISION" > /opt/google-workspace-mcp/REVISION
-chown root:root /opt/google-workspace-mcp/REVISION
-chmod 0644 /opt/google-workspace-mcp/REVISION
+ssh google-mcp-host \
+  "printf '%s\n' '$REVISION' > /opt/google-workspace-mcp/REVISION && \
+   chown root:root /opt/google-workspace-mcp/REVISION && \
+   chmod 0644 /opt/google-workspace-mcp/REVISION"
 ```
+
+Run this from the workstation, in the shell that defined `REVISION` during delivery. The outer double quotes are required so the value expands locally: the host session has no such variable, and under `set -u` the block ends on `unbound variable`, leaving the marker on the previous revision — the exact defect the marker exists to prevent.
 
 This marker is the only thing that distinguishes a host carrying the current tree from one left behind by an earlier delivery, and a merge that was never deployed looks exactly like a deployment from inside the repository.
 
@@ -144,7 +151,11 @@ for service in gmail calendar drive sheets docs; do
   sudo -u googlemcp test -x \
     "/opt/google-workspace-mcp/app/.venv/bin/google-mcp-$service"
 done
+test -x "/opt/google-workspace-mcp/app/.venv/bin/google-mcp-cutover"
+test -x "/opt/google-workspace-mcp/app/.venv/bin/google-mcp-warmup"
 ```
+
+These two are checked as root rather than through `sudo -u googlemcp`: the operator runs them, the services do not. A delivery that predates either entry point installs units whose `ExecStart` has nothing to execute.
 
 ## Install service configuration
 
