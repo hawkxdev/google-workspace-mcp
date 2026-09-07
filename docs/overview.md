@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Hawkx Workspace MCP provides five independent remote MCP services for Google Workspace:
+Google Workspace MCP provides five independent remote MCP services for Google Workspace:
 
 - Gmail
 - Google Calendar
@@ -129,6 +129,7 @@ Each service exposes the same endpoint classes under its own public URL.
 
 | Endpoint | Access | Purpose |
 |---|---|---|
+| `GET` or `HEAD /` | Public | Protocol-version probe |
 | `GET /health` (proxied as `/<service>/health`) | Public | Process liveness |
 | `GET /ready` (proxied as `/<service>/ready`) | Authenticated | Service readiness |
 | `/<service>/mcp` | Authenticated | Streamable HTTP MCP (canonical protected resource) |
@@ -203,10 +204,10 @@ Local development binds to loopback. A production public URL is advertised throu
 
 | Service | Capability groups |
 |---|---|
-| Gmail | bounded message and thread search, message and thread reads, labels, managed attachments, drafts, plain-text sending, replies |
+| Gmail | bounded message and thread search, message and thread reads, labels, message state changes, managed attachments, drafts, plain-text sending, replies |
 | Calendar | calendar lists, bounded event search, event reads, free/busy, event CRUD, recurring events, mixed mutation batches |
 | Drive | structured search, metadata, folder contents, managed downloads, exports, folders, uploads, versioned updates, moves, app-owned copies |
-| Sheets | spreadsheet metadata, A1 range reads, range updates, row appends, range clearing, sheet creation, rename and copy |
+| Sheets | spreadsheet creation and metadata, A1 range reads, batch range reads and updates, range updates, row appends, range clearing, sheet creation, rename and copy |
 | Docs | recursive tab metadata, bounded typed reads, document creation, text insertion, literal replacement, range deletion, atomic typed batches |
 
 Detailed service arguments, limits, error schemas, and mutation semantics belong to the service integration reference rather than this overview.
@@ -285,6 +286,7 @@ a refresh token after six months of inactivity, counting token exchanges rather
 than API use, so a rarely called service would otherwise lose access on a date
 chosen by the calendar. It is driven by a monthly systemd timer; see
 `deploy/README.md`.
+
 ## Source Layout
 
 ```text
@@ -301,11 +303,13 @@ src/google_workspace_mcp/
 │   ├── cutover.py
 │   ├── oauth_admin.py
 │   ├── runner.py
+│   ├── warmup.py
 │   ├── gmail.py
 │   ├── calendar.py
 │   ├── drive.py
 │   ├── sheets.py
 │   └── docs.py
+├── evals/
 ├── common/
 │   ├── config.py
 │   ├── managed_files.py
@@ -335,6 +339,8 @@ deploy/
 ├── README.md
 ├── check-cutover-ingress.sh
 ├── env/
+├── google-mcp-warmup.service
+├── google-mcp-warmup.timer
 ├── google-mcp@.service
 ├── nginx-google-workspace-mcp-active.inc
 ├── nginx-google-workspace-mcp-bootstrap.conf
@@ -343,6 +349,7 @@ deploy/
 ├── nginx-google-workspace-mcp.conf
 └── public/
 ```
+
 ## Local Setup
 
 Install the package and entry points:

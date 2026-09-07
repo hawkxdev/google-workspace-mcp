@@ -229,7 +229,9 @@ The service returns an explicit input or unsupported-profile error when a reques
 
 Mutation tools validate input and provider preconditions before sending a write.
 
-A stale version, revision, or precondition produces a conflict rather than silently overwriting newer state.
+The strength of that check differs by service, and a client must not assume the strongest form everywhere. Calendar event writes carry the provider precondition on the write itself, so a stale version is rejected by the provider and cannot overwrite newer state. Drive metadata and content updates and Drive moves perform a best-effort preflight read and then write unconditionally: the check is not atomic, and a concurrent write landing inside that window is overwritten last-write-wins. Sheets range writes are last-write-wins by design.
+
+Each tool description states its own guarantee, and that description is the authoritative one for a client.
 
 Writes are not blindly retried when a transport or provider failure leaves the outcome uncertain.
 
@@ -253,7 +255,7 @@ Docs mutations use:
 - typed operations;
 - bounded batches.
 
-A batch runs operations in caller order, but every index is interpreted against the supplied revision.
+A batch runs operations in caller order, and every index is validated against the supplied revision only. Validation is not interpretation: later operations observe the index shifts caused by earlier ones, so supply indices for the state the revision describes, and split work into successive calls when an operation depends on an earlier shift.
 
 A batch contains at most one literal replacement. A replacement cannot be combined with operations that shift indices.
 

@@ -2,9 +2,9 @@
 
 ## Purpose and public boundary
 
-Fixture version `stage12-v1` defines fully synthetic objects for the upcoming 50 read-only evaluation tasks: ten each for Gmail, Calendar, Drive, Sheets, and Docs. This public directory holds only logical references, opaque markers, synthetic values, and the shape of future requests. It contains no Google IDs, no account address, no user content, no tokens, and no credential-reference values.
+Fixture version `stage12-v1` defines fully synthetic objects for the 50 read-only evaluation tasks: ten each for Gmail, Calendar, Drive, Sheets, and Docs. This public directory holds only logical references, opaque markers, synthetic values, and the shape of the requests. It contains no Google IDs, no account address, no user content, no tokens, and no credential-reference values.
 
-The task XML files appear after live seeding and a single readiness check. Until the registry reaches `ready`, `require_ready_for_xml()` refuses to allow authoring them.
+The task XML files were authored after live seeding and a single readiness check: until the registry reaches `ready`, `require_ready_for_xml()` refuses to allow authoring them. All five catalogues are committed here, ten tasks each.
 
 ## Version and logical references
 
@@ -55,7 +55,6 @@ All 50 task IDs and questions are unique. Across the five files, fixture referen
 The production validator is independent from the static catalog test. It rejects missing or extra service files, unexpected XML elements, entity declarations, duplicate tasks, noncanonical expected answers, foreign fixture references, write tools, incomplete registry coverage, zero-call routes, private values, and malformed normalizer inputs.
 
 ```bash
-cd app
 uv run --no-sync python -m google_workspace_mcp.evals validate \
   --evals-dir evals \
   --bindings ../private/evals/bindings.json
@@ -70,7 +69,6 @@ The evaluation client uses `deepseek-v4-pro` through DeepSeek's Anthropic-compat
 Each service owns a separate `OAuthClientProvider`, DCR registration, PKCE flow, and persistent `TokenStorage` file. The separate `authorize` command creates owner-only state below `private/evals/oauth/`, completes all five OAuth flows, and verifies the exact registries without calling the model. Subsequent runs require an exact stored issuer, reuse the stored client information, absolute access-token expiry, and refresh token, and never permit an interactive browser fallback. An expired stored token refreshes against the issuer-bound service endpoint. After the five registry checks and before the first evaluation tool call, `run` performs token counting and one Messages API request with `max_tokens=1`.
 
 ```bash
-cd app
 uv run --no-sync python -m google_workspace_mcp.evals authorize \
   --bindings ../private/evals/bindings.json \
   --oauth-dir ../private/evals/oauth \
@@ -88,7 +86,7 @@ uv run --no-sync python -m google_workspace_mcp.evals run \
   --evals-dir evals \
   --bindings ../private/evals/bindings.json \
   --oauth-dir ../private/evals/oauth \
-  --evidence ../evidence/evaluation-run.md \
+  --evidence ../private/evals/evaluation-run.md \
   --gmail-url https://mcp.hawkxdev.dev/gmail/mcp \
   --calendar-url https://mcp.hawkxdev.dev/calendar/mcp \
   --drive-url https://mcp.hawkxdev.dev/drive/mcp \
@@ -101,6 +99,8 @@ The first `run` invocation atomically creates a private fixture-version marker w
 The evidence writer accepts only terminal statuses, public task IDs, read-only tool names, version strings, counters, fixed error categories, and SHA-256 answer digests. Questions, answers, tool inputs, tool outputs, Google IDs, URLs, local paths, tokens, and exception text have no evidence fields.
 
 ## The private `bindings.json`
+
+Every command above runs from the repository root, and every `../private/...` argument points outside the repository on purpose: the registry, the OAuth state and the run evidence hold owner-only values and are never tracked here. Place that directory wherever the operator keeps private state and adjust the relative paths to match.
 
 The owner creates the registry `private/evals/bindings.json` before the first application: the file is written with mode `0600` inside a `0700` directory and carries the fixture version, state `planned`, two private values, and five credential references. The module intentionally provides no creation subcommand: these values come from the owner rather than being computed, so `apply` only reads a prepared registry and extends it as it goes. Loading rejects symlinks, special files, a foreign owner, a different mode, unknown fields, and an incompatible version. The fields `owner_email` and `calendar_primary_id` are private values and are masked by Pydantic on serialization. The `credentials.*.reference` fields hold references to separate user OAuth2 files only, and never a token or a client secret.
 
@@ -131,7 +131,6 @@ If the registry already holds some objects or operations, re-application is refu
 The command builds real `google-api-python-client` request objects and reads their `method`, `uri`, and `body` without calling `.execute()`:
 
 ```bash
-cd app
 uv run --no-sync python -m google_workspace_mcp.evals preview
 ```
 
@@ -146,7 +145,6 @@ The preview covers 14 operations: four Gmail, three Calendar, three Drive, two S
 Application runs through the `apply` subcommand of the same module. All of its arguments are mandatory and none has a default:
 
 ```bash
-cd app
 uv run --no-sync python -m google_workspace_mcp.evals apply \
   --bindings ../private/evals/bindings.json \
   --credentials-dir ../private/google-tokens \
@@ -165,18 +163,17 @@ The evaluation run process neither accepts nor receives full-access tokens. Afte
 
 ## Service contracts
 
-Gmail keeps draft ID, message ID, thread ID, and delivery confirmation distinct. The two threads hold a different number of messages, and every delivery carries its own opaque marker. The delivery check performs a single bounded search with `max_results=1` on the exact marker. No result yields `not_ready`, and nothing is retried automatically. User labels, subjects, recipients, snippets, and bodies are never read; future label tasks use system labels only, sorted by `label_id`.
+Gmail keeps draft ID, message ID, thread ID, and delivery confirmation distinct. The two threads hold a different number of messages, and every delivery carries its own opaque marker. The delivery check performs a single bounded search with `max_results=1` on the exact marker. No result yields `not_ready`, and nothing is retried automatically. User labels, subjects, recipients, snippets, and bodies are never read; label tasks use system labels only, sorted by `label_id`.
 
 Calendar uses only the primary calendar through a private reference and a fixed window from 2027-02-01 to 2027-03-01. Every event carries an exact marker and `sendUpdates=none`, and none has attendees. User calendar names and third-party availability are not part of the fixture.
 
-Drive creates one dedicated folder and two objects inside it, each with a unique marker. Sheets creates one spreadsheet with two sheets, holding only the values and formulas its ten future tasks require. Docs creates one document and one tab with bounded synthetic text.
+Drive creates one dedicated folder and two objects inside it, each with a unique marker. Sheets creates one spreadsheet with two sheets, holding only the values and formulas its ten tasks require. Docs creates one document and one tab with bounded synthetic text.
 
 ## Readiness check
 
 The live check uses the same five explicit credential files as seeding:
 
 ```bash
-cd app
 uv run --no-sync python -m google_workspace_mcp.evals readiness \
   --bindings ../private/evals/bindings.json \
   --credentials-dir ../private/google-tokens

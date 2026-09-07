@@ -26,17 +26,18 @@ The public HTTPS surface serves the homepage and privacy policy together with fi
 - Managed Gmail attachment and Drive download storage
 - OAuth state administration CLI
 - Google installed-application authorization CLI
-- Cross-service cutover safety and state transition CLI
-- A hardened systemd template, five isolated environment examples, and active, maintenance, candidate, and bootstrap nginx assets
+- Cross-service cutover safety and state transition CLI (`google-mcp-cutover`)
+- Google credential warm-up CLI (`google-mcp-warmup`) with a monthly systemd timer, which forces one token exchange per service so a rarely called credential does not expire from provider inactivity
+- A hardened systemd template, a warm-up service and timer, five isolated environment examples, and active, maintenance, candidate, and bootstrap nginx assets
 
 ## Service capabilities
 
 | Service | Tools | Capabilities |
 |---|---:|---|
-| Gmail | 18 | bounded message and thread search and reads, labels, managed attachment downloads, drafts, plain-text send, and reply |
+| Gmail | 18 | bounded message and thread search and reads, labels, message state changes (archive, mark read, mark unread), managed attachment downloads, drafts, plain-text send, and reply |
 | Calendar | 9 | calendar list, bounded event search and reads, free/busy, event CRUD, recurring-event scopes, and batch mutations |
 | Drive | 10 | structured search, metadata, folder contents, managed downloads, exports, folder creation, uploads, versioned updates, moves, and app-owned copies |
-| Sheets | 11 | spreadsheet metadata, single and batch range reads and writes, row appending, range clearing, and sheet structure management |
+| Sheets | 11 | spreadsheet creation and metadata, single and batch range reads and writes, row appending, range clearing, and sheet structure management |
 | Docs | 7 | recursive tab metadata, bounded typed reads, document creation, text insertion, replacement, range deletion, and typed atomic batches |
 
 Detailed tool names, limits, concurrency, continuation, and error behavior are documented in [Google Workspace integrations](docs/integrations.md).
@@ -134,6 +135,10 @@ DOCS_
 | `<SERVICE>_MCP_DOWNLOAD_PATH` | no | `~/.local/share/google-workspace-mcp/<service>/downloads` |
 | `<SERVICE>_OAUTH_ACCESS_TOKEN_TTL_SECONDS` | no | `86400` |
 | `<SERVICE>_OAUTH_REFRESH_TOKEN_TTL_SECONDS` | no | `2592000` |
+| `<SERVICE>_OAUTH_LEGACY_CLIENTS_PATH` | no | unset, no legacy import |
+| `<SERVICE>_OAUTH_APPROVED_LEGACY_CLIENT_IDS` | no | empty, nothing approved |
+
+The two legacy keys govern a one-way import of downstream OAuth clients registered before the current state format. The path names the file to import; every client in that file is imported. The comma-separated approved-ids list decides the policy each one receives: an approved client keeps full access, and every other imported client must reauthorize before it regains access. An approved id that the source file does not contain aborts the import rather than being ignored. Leave both unset on a fresh deployment.
 
 The public URL must be an absolute HTTPS URL identifying the service-base issuer (for example `https://mcp.hawkxdev.dev/gmail`). The canonical protected MCP resource (`/<service>/mcp`), OAuth metadata, bearer-token resource binding, and advertised endpoints are derived from it.
 
@@ -191,6 +196,7 @@ src/google_workspace_mcp/
 ├── audit/
 ├── cli/
 ├── common/
+├── evals/
 ├── google_auth/
 ├── services/
 └── transport/
@@ -199,6 +205,8 @@ deploy/
 ├── README.md
 ├── check-cutover-ingress.sh
 ├── env/
+├── google-mcp-warmup.service
+├── google-mcp-warmup.timer
 ├── google-mcp@.service
 ├── nginx-google-workspace-mcp-active.inc
 ├── nginx-google-workspace-mcp-bootstrap.conf
@@ -216,7 +224,7 @@ docs/
 
 ## Current boundaries
 
-- The deployed revision runs through one systemd template and five isolated instances.
+- The deployed revision runs through one systemd template and five isolated instances, plus a timer-driven warm-up unit that touches credentials only.
 - Production Google credentials are stored only in per-service owner-only files on the managed host.
 - The homepage, privacy policy, MCP routes, OAuth routes, metadata, health, and readiness share one HTTPS vhost without sharing process state.
 - Google OAuth publishing and verification are separate states.

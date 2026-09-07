@@ -109,7 +109,7 @@ A policy change can require a new interactive authorization instead of refresh.
 
 ## Bearer Enforcement
 
-Public routes include health, OAuth discovery (`/.well-known/oauth-authorization-server/<service>` and `/.well-known/oauth-protected-resource/<service>/mcp`), registration, authorization, and token exchange.
+Public routes include health, OAuth discovery (`/.well-known/oauth-authorization-server/<service>` and `/.well-known/oauth-protected-resource/<service>/mcp`), registration, authorization, token exchange, and `GET` or `HEAD` on the service root, which answers a protocol-version probe whenever the MCP path is not the root itself.
 
 Protected routes require one valid bearer token. The middleware rejects:
 
@@ -231,25 +231,31 @@ List operations return metadata only. They do not return token values or client 
 
 Revoking a client from one service does not revoke the same application from the other four services.
 
-### Revoke one Google service grant
+### Replace one Google service credential
 
 1. Stop the affected service.
-2. Revoke the application in Google Account security settings.
-3. Remove the affected service credential file.
-4. Run `google-mcp-authorize` again for that service.
-5. Confirm the exact returned scope set.
-6. Restart the service.
+2. Remove the affected service credential file.
+3. Run `google-mcp-authorize` again for that service.
+4. Confirm the exact returned scope set.
+5. Restart the service.
 
-The other four service grants remain unchanged.
+The other four service credentials remain unchanged, because this procedure touches one file and asks Google for one new grant.
+
+**Do not use the Google Account security page to reset a single service.** All five services share one OAuth client, and that page revokes access per application, so revoking there invalidates all five refresh tokens at once and forces reauthorization of every service. Revoke there only when withdrawing the whole application deliberately.
 
 ## OAuth Error Contract
 
 | Condition | HTTP result | OAuth error |
 |---|---:|---|
 | Malformed authorization request | `400` | `invalid_request` |
-| Unknown or rejected client | `401` | `invalid_client` |
-| Wrong canonical resource | `400` or `401` | `invalid_target` |
+| Unknown or rejected client at the authorization endpoint | `400` | `invalid_client` |
+| Client authentication failure at the token endpoint | `401` | `invalid_client` |
+| Wrong canonical resource | `400` | `invalid_target` |
 | Invalid, expired, reused, or revoked grant | `400` | `invalid_grant` |
+| Unsupported response type | `400` | `unsupported_response_type` |
+| Unsupported grant type | `400` | `unsupported_grant_type` |
+| Malformed registration metadata | `400` | `invalid_client_metadata` |
+| Rejected registration redirect URI | `400` | `invalid_redirect_uri` |
 | Missing bearer token | `401` | Bearer challenge |
 | Invalid bearer token | `401` | `invalid_token` |
 | Valid token without required capability | `403` | `insufficient_scope` |

@@ -153,6 +153,8 @@ In this state:
 
 Publishing does not guarantee that refresh tokens will remain valid permanently. A refresh token can still be invalidated by user revocation, account security events, inactivity, token limits, or Google policy changes.
 
+Inactivity is the one item on that list a deployment can act on. Google measures it by token exchanges rather than by API calls, and retires an OAuth client or a refresh token after six months without one, so a rarely called service expires on a date set by the calendar. The `google-mcp-warmup` command forces one exchange per service and ships with a monthly timer; see [Authorization and Security](auth.md) for the credential model and [Production Deployment](../deploy/README.md) for installing the timer.
+
 ## OAuth User Cap
 
 The OAuth user cap counts unique Google accounts that grant unapproved sensitive or restricted scopes.
@@ -272,17 +274,17 @@ The application can be used by its owner before verification, but public distrib
 
 ## Revocation and Reauthorization
 
-A user can revoke access from Google Account security settings.
+A user can revoke access from Google Account security settings. That page revokes per application, and all five services share one OAuth client, so revoking there invalidates all five refresh tokens at once. Use it to withdraw the whole application, never to reset a single service.
 
-After revocation:
+After such a revocation, every service needs its credential replaced:
 
-1. Stop the affected service.
-2. Remove the affected local credential file.
-3. Run `google-mcp-authorize` again for that service.
+1. Stop the services.
+2. Remove the local credential files.
+3. Run `google-mcp-authorize` again for each service.
 4. Confirm the exact scope set.
-5. Restart the service with the new credential.
+5. Restart the services with the new credentials.
 
-Revoking one service must not require replacing the other four service grants.
+To replace one service credential without touching the other four, skip the security page entirely: stop that service, delete its credential file, and authorize it again. Google issues a new grant for the same client, and the other four files stay valid.
 
 ## Troubleshooting
 
@@ -304,9 +306,9 @@ Then rerun the authorization command with `--no-sync`.
 
 ### No refresh token was returned
 
-Remove the application's existing access from Google Account security settings and repeat the service authorization.
+The CLI requests offline access and forces the consent screen, which is what makes Google return a refresh token. If Google still returns none, the command fails without storing an incomplete credential; rerun the authorization for that service and complete the consent screen without dismissing it.
 
-The CLI requests offline access and forces the consent screen. If Google still returns no refresh token, the command fails without storing an incomplete credential.
+Do not clear the application from Google Account security settings to force this: that revokes the single shared OAuth client and destroys the other four services' refresh tokens without making this one more likely to arrive.
 
 ### The granted scopes do not match
 

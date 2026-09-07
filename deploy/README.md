@@ -285,6 +285,11 @@ set -euo pipefail
 install -d -o root -g root -m 0755 /etc/nginx/snippets
 install -o root -g root -m 0644 \
   deploy/nginx-google-workspace-mcp-active.inc \
+  /etc/nginx/snippets/google-workspace-mcp-active.inc
+install -o root -g root -m 0644 \
+  deploy/nginx-google-workspace-mcp-maintenance.inc \
+  /etc/nginx/snippets/google-workspace-mcp-maintenance.inc
+ln -sf /etc/nginx/snippets/google-workspace-mcp-active.inc \
   /etc/nginx/snippets/google-workspace-mcp-dynamic.inc
 sed 's/__DOMAIN__/mcp.hawkxdev.dev/g' \
   deploy/nginx-google-workspace-mcp.conf \
@@ -360,6 +365,21 @@ The `google-mcp-cutover` CLI enforces safety gates during cutover and maintenanc
    ```
 
 Ingress verification is automated via `deploy/check-cutover-ingress.sh`. The `candidate` argument validates against the loopback candidate on port 9443 before the cutover; the `public` argument validates against public HTTPS after it.
+
+The `candidate` argument needs its vhost installed first, and that vhost includes the active snippet by its own name, which is why the snippet is installed under that name and reached through the `dynamic` symlink rather than copied straight onto it:
+
+```bash
+set -euo pipefail
+install -o root -g root -m 0644 \
+  deploy/nginx-google-workspace-mcp-candidate.conf \
+  /etc/nginx/sites-available/google-workspace-mcp-candidate.conf
+ln -sf /etc/nginx/sites-available/google-workspace-mcp-candidate.conf \
+  /etc/nginx/sites-enabled/google-workspace-mcp-candidate.conf
+nginx -t
+systemctl reload nginx
+```
+
+Remove the `sites-enabled` link and reload again once candidate verification is finished; the candidate listener is a pre-cutover instrument, not part of the serving configuration.
 
 ```bash
 ./deploy/check-cutover-ingress.sh candidate

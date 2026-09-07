@@ -97,7 +97,7 @@ Calendar provides 9 tools.
 | Recurrence lines | 10 |
 | Text field length | 4,000 characters |
 
-Calendar event writes use provider version information when available. A stale event state produces a conflict instead of silently overwriting newer data.
+Calendar event writes require provider version information: `calendar_update_event` and `calendar_delete_event` both take a mandatory `etag`, sent as a precondition on the write itself, so a stale event state produces a conflict instead of silently overwriting newer data.
 
 The service does not manage calendars, sharing permissions, or access-control lists.
 
@@ -111,11 +111,11 @@ Drive provides 10 tools.
 | `drive_get_file` | Read metadata for one file |
 | `drive_list_folder` | List folder contents |
 | `drive_download_file` | Store one binary file in managed storage |
-| `drive_export_file` | Export a Google Workspace file into managed storage |
+| `drive_export_file` | Export a Google Workspace file into managed storage; CSV exports carry the first sheet only |
 | `drive_create_folder` | Create a folder |
 | `drive_upload_file` | Upload one managed local file |
-| `drive_update_file` | Update metadata or content with version preflight |
-| `drive_move_file` | Move a file with version preflight |
+| `drive_update_file` | Update metadata or content with best-effort, non-atomic version preflight; requires at least one change, and a content update requires managed name, size, digest and MIME type together |
+| `drive_move_file` | Move a file with best-effort, non-atomic version preflight |
 | `drive_copy_file` | Create an app-owned copy |
 
 ### Drive bounds
@@ -130,6 +130,8 @@ Drive provides 10 tools.
 `drive.readonly` permits discovery and reading of existing files. `drive.file` limits writes to files created by or explicitly opened with the application.
 
 Download and export results use the Drive managed-file boundary. They are never written to the credential or OAuth state directory.
+
+Drive does not provide optimistic concurrency. The version preflight on updates and moves is a separate read followed by an unconditional write, so a concurrent write that lands between the two is overwritten. Treat Drive writes as last-write-wins and serialize them at the caller when that matters.
 
 ## Sheets
 
