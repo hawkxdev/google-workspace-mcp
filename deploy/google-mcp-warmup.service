@@ -15,16 +15,29 @@ Environment=HOME=/var/lib/google-workspace-mcp
 # service in one run, and each credential path is named by its own
 # prefixed variable. Without them the command would fall back to the
 # packaged default path, find no credential and fail loudly.
-EnvironmentFile=/etc/google-mcp/gmail.env
-EnvironmentFile=/etc/google-mcp/calendar.env
-EnvironmentFile=/etc/google-mcp/drive.env
-EnvironmentFile=/etc/google-mcp/sheets.env
-EnvironmentFile=/etc/google-mcp/docs.env
+#
+# The "-" prefix makes a missing file skipped rather than fatal, so a
+# host running only some of the services still warms up the ones it
+# has: without it a single absent file fails the whole unit before any
+# service is reached. A service whose environment is genuinely missing
+# is still reported by the run itself, on the fallback path above.
+EnvironmentFile=-/etc/google-mcp/gmail.env
+EnvironmentFile=-/etc/google-mcp/calendar.env
+EnvironmentFile=-/etc/google-mcp/drive.env
+EnvironmentFile=-/etc/google-mcp/sheets.env
+EnvironmentFile=-/etc/google-mcp/docs.env
 
 ExecStart=/opt/google-workspace-mcp/app/.venv/bin/google-mcp-warmup
 
 # A failed warm-up must not touch the running services.
 Restart=no
+
+# Type=oneshot disables the start timeout by default, so without this
+# the run has no upper bound at all. The internal timeouts bound one
+# pass at roughly 45 minutes across the five services; 900 seconds
+# covers a healthy run with a wide margin and still releases the
+# credential lock if a service hangs.
+TimeoutStartSec=900
 
 NoNewPrivileges=true
 PrivateTmp=true

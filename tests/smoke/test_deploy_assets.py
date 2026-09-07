@@ -189,6 +189,9 @@ def test_warmup_unit_runs_once_as_the_service_account() -> None:
     assert directives['ExecStart'] == (
         '/opt/google-workspace-mcp/app/.venv/bin/google-mcp-warmup'
     )
+    # Type=oneshot disables the start timeout by default, so an absent
+    # directive means no bound at all rather than a distribution one.
+    assert directives['TimeoutStartSec'] == '900'
 
 
 def test_warmup_unit_loads_every_service_environment() -> None:
@@ -198,7 +201,12 @@ def test_warmup_unit_loads_every_service_environment() -> None:
         if key == 'EnvironmentFile'
     ]
 
-    assert loaded == [f'/etc/google-mcp/{service}.env' for service in SERVICES]
+    # The "-" prefix is the property under test, not decoration: without
+    # it one absent environment file fails the unit before any service
+    # is reached, so a partially deployed host warms up nothing.
+    assert loaded == [
+        f'-/etc/google-mcp/{service}.env' for service in SERVICES
+    ]
 
 
 def test_warmup_timer_uses_a_schedule_oneshot_supports() -> None:

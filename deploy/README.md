@@ -125,6 +125,17 @@ chown -R root:root \
   /opt/google-workspace-mcp/python
 ```
 
+Record the delivered revision on the host, so that what is running can be identified without guessing from file dates:
+
+```bash
+set -euo pipefail
+printf '%s\n' "$REVISION" > /opt/google-workspace-mcp/REVISION
+chown root:root /opt/google-workspace-mcp/REVISION
+chmod 0644 /opt/google-workspace-mcp/REVISION
+```
+
+This marker is the only thing that distinguishes a host carrying the current tree from one left behind by an earlier delivery, and a merge that was never deployed looks exactly like a deployment from inside the repository.
+
 Before enabling a unit, prove that the service user can execute every entry point:
 
 ```bash
@@ -207,6 +218,8 @@ systemctl daemon-reload
 systemctl enable --now google-mcp-warmup.timer
 ```
 
+The unit itself is bounded in two ways worth knowing before installation. `TimeoutStartSec=900` is declared explicitly, because `Type=oneshot` disables the start timeout by default and an absent directive would mean no bound at all rather than a distribution default; the internal per attempt timeouts already cap one pass at roughly forty five minutes, and the declared limit releases the credential lock well before that if a service hangs. Each `EnvironmentFile=` is written with a leading `-`, so a host that runs only some of the services still warms up the ones it has instead of failing the whole unit on the first absent file; a service whose environment is genuinely missing is still reported by the run, which falls back to the packaged default credential path and fails loudly for that service alone.
+
 The timer is calendar based on purpose. `OnUnitActiveSec` is not supported for `Type=oneshot`, because such a unit never reaches the active state, and `Persistent=true` works only with a calendar schedule. `Persistent=true` is wanted here so a month missed while the host was down is caught up.
 
 **Treat enabling this timer as a possible immediate run.** With `Persistent=true` a missed occurrence can fire during `daemon-reload` or when the timer is armed. That is harmless for a warm-up, which is idempotent, but it means the first token exchange may happen at install time rather than on the first of next month. Inspect the schedule before assuming otherwise:
@@ -215,6 +228,15 @@ The timer is calendar based on purpose. `OnUnitActiveSec` is not supported for `
 systemctl list-timers google-mcp-warmup.timer --all
 systemctl show google-mcp-warmup.timer -p LastTriggerUSec -p NextElapseUSecRealtime
 ```
+
+**`LastTriggerUSec` does not answer whether a run happened.** Arming the timer writes its persistent stamp under `/var/lib/systemd/timers/`, and the field takes that moment even though no run was activated: a freshly armed timer that has never fired reports a timestamp seconds old. Read the service instead, where an activation leaves a record and an absent one leaves nothing:
+
+```bash
+journalctl -u google-mcp-warmup.service --since today --no-pager
+systemctl show google-mcp-warmup.service -p ExecMainStartTimestamp
+```
+
+An empty `ExecMainStartTimestamp` together with an empty service journal means the arming did not trigger a run. Note also that `systemctl show -p Result` prints `success` for a oneshot unit that has never executed, so it cannot distinguish a clean run from no run at all.
 
 Verify one run by hand and read what it reported:
 
