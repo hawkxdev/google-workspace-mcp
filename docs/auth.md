@@ -193,6 +193,13 @@ Revoke a client and its active authorization state:
 uv run --no-sync google-mcp-oauth --service gmail clients revoke <client-id>
 ```
 
+Change a client policy and revoke its live tokens. The client keeps its
+credentials and re-authorizes under the new policy:
+
+```bash
+uv run --no-sync google-mcp-oauth --service gmail clients set-policy <client-id> legacy_full
+```
+
 List tokens:
 
 ```bash

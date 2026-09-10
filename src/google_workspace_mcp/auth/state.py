@@ -169,6 +169,18 @@ class RegisteredClient:
 
 
 @dataclass(frozen=True)
+class SetPolicyOutcome:
+    """Client policy change result."""
+
+    client_id: str
+    previous_policy: str
+    policy: str
+    revoked_authorization_codes: int
+    revoked_access_tokens: int
+    revoked_refresh_tokens: int
+
+
+@dataclass(frozen=True)
 class TokenMetadata:
     """Issued access metadata."""
 
@@ -928,6 +940,50 @@ class OAuthState:
                 (now, client_id),
             )
         return True
+
+    def set_client_policy(
+        self, client_id: str, policy: str
+    ) -> SetPolicyOutcome | None:
+        """Set client policy and revoke its live authorization state."""
+        if policy not in {MCP_READONLY_V1, LEGACY_FULL}:
+            raise ValueError('policy must be mcp_readonly_v1 or legacy_full')
+        now = self._clock()
+        with self._transaction() as connection:
+            row = connection.execute(
+                'SELECT policy FROM clients '
+                'WHERE client_id = ? AND revoked_at IS NULL',
+                (client_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            connection.execute(
+                'UPDATE clients SET policy = ? WHERE client_id = ?',
+                (policy, client_id),
+            )
+            codes = connection.execute(
+                'UPDATE authorization_codes SET revoked_at = ? '
+                'WHERE client_id = ? AND revoked_at IS NULL '
+                'AND consumed_at IS NULL',
+                (now, client_id),
+            ).rowcount
+            access = connection.execute(
+                'UPDATE access_tokens SET revoked_at = ? '
+                'WHERE client_id = ? AND revoked_at IS NULL',
+                (now, client_id),
+            ).rowcount
+            refresh = connection.execute(
+                'UPDATE refresh_tokens SET revoked_at = ? '
+                'WHERE client_id = ? AND revoked_at IS NULL',
+                (now, client_id),
+            ).rowcount
+        return SetPolicyOutcome(
+            client_id=client_id,
+            previous_policy=str(row['policy']),
+            policy=policy,
+            revoked_authorization_codes=codes,
+            revoked_access_tokens=access,
+            revoked_refresh_tokens=refresh,
+        )
 
     def backup(self, destination: str | Path) -> Path:
         """Create state backup."""

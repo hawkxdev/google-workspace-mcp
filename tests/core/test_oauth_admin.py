@@ -12,7 +12,11 @@ from pathlib import Path
 
 import pytest
 
-from google_workspace_mcp.auth.state import MCP_READONLY_V1, OAuthState
+from google_workspace_mcp.auth.state import (
+    LEGACY_FULL,
+    MCP_READONLY_V1,
+    OAuthState,
+)
 from google_workspace_mcp.cli import oauth_admin
 from google_workspace_mcp.common.config import ServiceConfig
 
@@ -155,6 +159,53 @@ def test_client_inventory_and_revoke_are_metadata_only(
         client = reopened.get_client(registered.client.client_id)
         assert client is not None
         assert client.revoked_at is not None
+
+
+def test_set_policy_updates_client_policy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = _configure_service(monkeypatch, tmp_path, 'gmail')
+    state = _state(config)
+    registered = state.register_client([REDIRECT], client_name='Policy test')
+    state.close()
+
+    result, stdout, stderr = _run(
+        'gmail',
+        'clients',
+        'set-policy',
+        registered.client.client_id,
+        LEGACY_FULL,
+    )
+    payload = json.loads(stdout)
+
+    assert result == 0
+    assert stderr == ''
+    assert payload['updated'] is True
+    assert payload['client_id'] == registered.client.client_id
+    assert payload['policy'] == LEGACY_FULL
+    assert payload['previous_policy'] == MCP_READONLY_V1
+
+    reopened = _state(config)
+    client = reopened.get_client(registered.client.client_id)
+    reopened.close()
+    assert client.policy == LEGACY_FULL
+
+
+def test_set_policy_unknown_client_reports_not_updated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _configure_service(monkeypatch, tmp_path, 'drive')
+
+    result, stdout, stderr = _run(
+        'drive', 'clients', 'set-policy', 'gwmcp-drive-absent', 'legacy_full'
+    )
+
+    assert result == 1
+    assert stderr == ''
+    assert json.loads(stdout) == {
+        'updated': False,
+        'client_id': 'gwmcp-drive-absent',
+    }
 
 
 def test_token_inventory_filter_and_revoke_never_expose_bearer(

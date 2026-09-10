@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import TextIO
 
 from google_workspace_mcp.auth.state import (
+    LEGACY_FULL,
+    MCP_READONLY_V1,
     ClientMetadata,
     OAuthState,
     OAuthStateError,
@@ -24,7 +26,9 @@ def _parser() -> argparse.ArgumentParser:
     """Build administration argument parser."""
     parser = argparse.ArgumentParser(
         prog='google-mcp-oauth',
-        description='Inspect, revoke, and back up local OAuth metadata.',
+        description=(
+            'Inspect, configure, revoke, and back up local OAuth metadata.'
+        ),
     )
     parser.add_argument('--service', choices=SERVICES, required=True)
     parser.add_argument('--state-path', type=Path)
@@ -48,6 +52,11 @@ def _parser() -> argparse.ArgumentParser:
         'revoke', help='Revoke a client and all of its state'
     )
     revoke_client.add_argument('client_id')
+    set_policy = client_actions.add_parser(
+        'set-policy', help='Set client policy and revoke its live tokens'
+    )
+    set_policy.add_argument('client_id')
+    set_policy.add_argument('policy', choices=(MCP_READONLY_V1, LEGACY_FULL))
 
     tokens = resources.add_parser('tokens', help='Token metadata operations')
     token_actions = tokens.add_subparsers(dest='action', required=True)
@@ -172,6 +181,30 @@ def main(
                 client_result['client_id'] = args.client_id
             _emit(output, client_result)
             return 0 if revoked else 1
+        if args.resource == 'clients' and args.action == 'set-policy':
+            outcome = state.set_client_policy(args.client_id, args.policy)
+            if outcome is None:
+                _emit(
+                    output,
+                    {'updated': False, 'client_id': args.client_id},
+                )
+                return 1
+            _emit(
+                output,
+                {
+                    'updated': True,
+                    'client_id': outcome.client_id,
+                    'policy': outcome.policy,
+                    'previous_policy': outcome.previous_policy,
+                    'revoked_authorization_codes': (
+                        outcome.revoked_authorization_codes
+                    ),
+                    'revoked_access_tokens': outcome.revoked_access_tokens,
+                    'revoked_refresh_tokens': outcome.revoked_refresh_tokens,
+                    'reauthorization_required': True,
+                },
+            )
+            return 0
         if args.resource == 'tokens' and args.action == 'list':
             tokens = state.list_tokens(include_inactive=not args.active_only)
             if args.client_id is not None:

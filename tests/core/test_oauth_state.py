@@ -766,6 +766,61 @@ def test_static_client_revoke_survives_restart(state_paths):
     reopened.close()
 
 
+def test_set_client_policy_grants_full_access_and_revokes_tokens(state_paths):
+    state = _state(state_paths)
+    client_id, client_secret = _register(state)
+    issued = _redeem(
+        state,
+        _issue_code(state, client_id),
+        client_id,
+        client_secret,
+    )
+    assert issued.token.policy == MCP_READONLY_V1
+
+    outcome = state.set_client_policy(client_id, LEGACY_FULL)
+
+    assert outcome is not None
+    assert outcome.previous_policy == MCP_READONLY_V1
+    assert outcome.policy == LEGACY_FULL
+    assert outcome.revoked_access_tokens == 1
+    assert outcome.revoked_refresh_tokens == 1
+    assert state.lookup_access_token(issued.access_token) is None
+    reissued = state.issue_access_token(
+        client_id=client_id,
+        resource=RESOURCE,
+    )
+    assert reissued.token.policy == LEGACY_FULL
+    assert reissued.token.capabilities == ()
+    state.close()
+
+
+def test_set_client_policy_unknown_or_revoked_client_returns_none(state_paths):
+    state = _state(state_paths)
+    client_id, _ = _register(state)
+    assert state.set_client_policy('gwmcp-gmail-absent', LEGACY_FULL) is None
+    state.revoke_client(client_id)
+    assert state.set_client_policy(client_id, LEGACY_FULL) is None
+    state.close()
+
+
+def test_set_client_policy_rejects_unknown_policy(state_paths):
+    state = _state(state_paths)
+    with pytest.raises(ValueError):
+        state.set_client_policy('gwmcp-gmail-absent', 'root_v1')
+    with pytest.raises(ValueError):
+        state.set_client_policy('gwmcp-gmail-absent', REAUTHORIZATION_REQUIRED)
+    state.close()
+
+
+def test_set_client_policy_keeps_client_secret_working(state_paths):
+    state = _state(state_paths)
+    client_id, client_secret = _register(state)
+    assert state.set_client_policy(client_id, LEGACY_FULL) is not None
+    assert state.verify_client_secret(client_id, client_secret)
+    assert state.get_client(client_id).policy == LEGACY_FULL
+    state.close()
+
+
 def test_backup_rejects_unsafe_target_and_produces_reopenable_copy(
     state_paths,
 ):
