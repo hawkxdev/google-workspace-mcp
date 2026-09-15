@@ -13,6 +13,8 @@ from google_workspace_mcp.transport.authorization import PolicyMCPServer
 from google_workspace_mcp.transport.extensions import Extension
 from google_workspace_mcp.transport.factory import validate_service_config
 
+GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS = 5
+
 
 def run_service_server(
     service_name: str,
@@ -34,6 +36,9 @@ def run_service_server(
             port=cfg.port,
             proxy_headers=True,
             forwarded_allow_ips=list(cfg.forwarded_allow_ips),
+            # Clients hold streaming sessions open; without a bound the
+            # shutdown waits for them until the process manager kills it.
+            timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
         )
     finally:
         state.close()

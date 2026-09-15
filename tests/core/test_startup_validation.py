@@ -263,6 +263,9 @@ def test_startup_success_invokes_uvicorn(
     assert call['proxy_headers'] is True
     assert call['forwarded_allow_ips'] == ['127.0.0.1']
     assert '*' not in call['forwarded_allow_ips']
+    # Streaming clients keep connections open, so an unbounded graceful
+    # shutdown lasts until systemd kills the unit after its 90 s default.
+    assert 0 < call['timeout_graceful_shutdown'] < 90
     assert hasattr(call['app'], 'routes')
     assert len(captured_state) == 1
     state = captured_state[0]

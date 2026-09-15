@@ -16,7 +16,8 @@ ExecStart=/opt/google-workspace-mcp/app/.venv/bin/google-mcp-%i
 Restart=on-failure
 RestartSec=5
 
-# Default SIGTERM handling is sufficient for the ASGI lifecycle.
+# The server bounds its own graceful shutdown, so a stop finishes well within
+# the default stop timeout even while clients hold streaming sessions open.
 # Runtime writes only to paths configured for each service.
 NoNewPrivileges=true
 PrivateTmp=true
