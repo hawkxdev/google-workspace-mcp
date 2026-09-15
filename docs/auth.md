@@ -138,6 +138,10 @@ Full access permits the complete service tool registry and any supported resourc
 
 Authorization policy is stored with the client and tokens. It is not selected by an untrusted request parameter.
 
+Dynamic client registration assigns `mcp_readonly_v1` to every new client unless `<SERVICE>_OAUTH_DCR_DEFAULT_POLICY` is set to `legacy_full`. The setting applies only to clients registered after the service starts with it: existing clients keep their stored policy, and `clients set-policy` changes one existing client. Registration alone grants nothing, because authorization still requires the operator login.
+
+Some MCP clients register a new client on every re-login instead of reusing the one they already have. Under the readonly default each such registration loses the policy an operator set on the previous one, so a deployment that grants full access to its own clients should set the variable rather than repeat `clients set-policy` after every login.
+
 ## OAuth State Storage
 
 Each service has a separate SQLite state database containing:

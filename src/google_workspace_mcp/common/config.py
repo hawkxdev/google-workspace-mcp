@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 _STATE_ROOT = Path('~/.local/share/google-workspace-mcp')
+DCR_POLICIES = ('mcp_readonly_v1', 'legacy_full')
 
 # Environment parsing helpers
 
@@ -114,6 +115,19 @@ def _integer(
     if not low <= parsed <= high:
         raise ValueError(f'{key} must be between {low} and {high}')
     return parsed
+
+
+def _choice(
+    env: Mapping[str, str], key: str, default: str, allowed: tuple[str, ...]
+) -> str:
+    """Parse a value from a closed set."""
+    value = env.get(key)
+    if value is None or not value.strip():
+        return default
+    value = value.strip()
+    if value not in allowed:
+        raise ValueError(f'{key} must be one of: {", ".join(allowed)}')
+    return value
 
 
 def _validate_mcp_path(path: str) -> None:
@@ -249,6 +263,7 @@ class ServiceConfig:
     approved_legacy_client_ids: frozenset[str]
     access_token_ttl_seconds: int
     refresh_token_ttl_seconds: int
+    dcr_default_policy: str = DCR_POLICIES[0]
 
     @property
     def resource_url(self) -> str:
@@ -348,6 +363,12 @@ class ServiceConfig:
                 2592000,
                 1,
                 7776000,
+            ),
+            dcr_default_policy=_choice(
+                env,
+                f'{prefix}_OAUTH_DCR_DEFAULT_POLICY',
+                DCR_POLICIES[0],
+                DCR_POLICIES,
             ),
         )
         _ = config.resource_url

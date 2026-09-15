@@ -246,13 +246,14 @@ class OAuthState:
         readonly_capabilities: tuple[str, ...] = (),
         legacy_path: str | Path | None = None,
         approved_legacy_client_ids: frozenset[str] = frozenset(),
+        registration_policy: str = MCP_READONLY_V1,
         access_token_ttl_seconds: int = 86_400,
         refresh_token_ttl_seconds: int = 2_592_000,
         clock: Callable[[], float] | None = None,
         static_client_authenticator: Callable[[str, str], bool] | None = None,
     ) -> None:
         """Configure OAuth state."""
-        # 1. Validate token lifetimes
+        # 1. Validate token lifetimes and registration policy
         if not 1 <= access_token_ttl_seconds <= MAX_ACCESS_TOKEN_TTL_SECONDS:
             raise ValueError(
                 'access_token_ttl_seconds must be between 1 and 2592000'
@@ -261,12 +262,17 @@ class OAuthState:
             raise ValueError(
                 'refresh_token_ttl_seconds must be between 1 and 7776000'
             )
+        if registration_policy not in {MCP_READONLY_V1, LEGACY_FULL}:
+            raise ValueError(
+                'registration_policy must be mcp_readonly_v1 or legacy_full'
+            )
         # 2. Normalize state settings
         self.path = Path(path).expanduser().absolute()
         self.download_path = Path(download_path).expanduser().absolute()
         self.service_id = service_id
         self.resource = canonicalize_resource(resource)
         self._readonly_capabilities = readonly_capabilities
+        self._registration_policy = registration_policy
         self.legacy_path = (
             Path(legacy_path).expanduser().absolute()
             if legacy_path is not None
@@ -379,7 +385,7 @@ class OAuthState:
                 (
                     client_id,
                     _secret_verifier('client', client_secret),
-                    MCP_READONLY_V1,
+                    self._registration_policy,
                     client_name,
                     now,
                 ),

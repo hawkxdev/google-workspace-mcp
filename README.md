@@ -135,8 +135,11 @@ DOCS_
 | `<SERVICE>_MCP_DOWNLOAD_PATH` | no | `~/.local/share/google-workspace-mcp/<service>/downloads` |
 | `<SERVICE>_OAUTH_ACCESS_TOKEN_TTL_SECONDS` | no | `86400` |
 | `<SERVICE>_OAUTH_REFRESH_TOKEN_TTL_SECONDS` | no | `2592000` |
+| `<SERVICE>_OAUTH_DCR_DEFAULT_POLICY` | no | `mcp_readonly_v1` |
 | `<SERVICE>_OAUTH_LEGACY_CLIENTS_PATH` | no | unset, no legacy import |
 | `<SERVICE>_OAUTH_APPROVED_LEGACY_CLIENT_IDS` | no | empty, nothing approved |
+
+`OAUTH_DCR_DEFAULT_POLICY` is the policy dynamic client registration gives a new client: `mcp_readonly_v1` or `legacy_full`. It does not change clients that already exist. See [Authentication](docs/auth.md#readonly-and-full-access).
 
 The two legacy keys govern a one-way import of downstream OAuth clients registered before the current state format. The path names the file to import; every client in that file is imported. The comma-separated approved-ids list decides the policy each one receives: an approved client keeps full access, and every other imported client must reauthorize before it regains access. An approved id that the source file does not contain aborts the import rather than being ignored. Leave both unset on a fresh deployment.
 

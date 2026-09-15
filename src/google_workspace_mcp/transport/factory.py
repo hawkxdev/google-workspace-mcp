@@ -96,6 +96,7 @@ def create_service_app(
             readonly_capabilities=server.readonly_capabilities(),
             legacy_path=config.legacy_clients_path,
             approved_legacy_client_ids=config.approved_legacy_client_ids,
+            registration_policy=config.dcr_default_policy,
             access_token_ttl_seconds=config.access_token_ttl_seconds,
             refresh_token_ttl_seconds=config.refresh_token_ttl_seconds,
         )

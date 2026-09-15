@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from google_workspace_mcp.common.config import ServiceConfig
+from google_workspace_mcp.auth.state import LEGACY_FULL, MCP_READONLY_V1
+from google_workspace_mcp.common.config import DCR_POLICIES, ServiceConfig
 
 # === Shared configuration setup ===
 
@@ -34,6 +35,7 @@ CONFIG_ENV_SUFFIXES = (
     'OAUTH_APPROVED_LEGACY_CLIENT_IDS',
     'OAUTH_ACCESS_TOKEN_TTL_SECONDS',
     'OAUTH_REFRESH_TOKEN_TTL_SECONDS',
+    'OAUTH_DCR_DEFAULT_POLICY',
 )
 DEFAULT_USER = 'admin'
 DEFAULT_PASS = 'super-secret'
@@ -280,6 +282,48 @@ class TestValidConfiguration:
             match='GMAIL_OAUTH_STATE_PATH.*GMAIL_GOOGLE_TOKEN_PATH',
         ):
             ServiceConfig.from_env('gmail')
+
+
+# === Registration policy cases ===
+class TestRegistrationPolicyConfiguration:
+    """Dynamic client registration policy cases."""
+
+    def test_unset_policy_is_readonly(self) -> None:
+        assert ServiceConfig.from_env('gmail').dcr_default_policy == (
+            'mcp_readonly_v1'
+        )
+
+    @pytest.mark.parametrize('value', ['mcp_readonly_v1', 'legacy_full'])
+    def test_accepted_policy_is_applied(
+        self, monkeypatch: pytest.MonkeyPatch, value: str
+    ) -> None:
+        monkeypatch.setenv('SHEETS_OAUTH_DCR_DEFAULT_POLICY', value)
+
+        assert ServiceConfig.from_env('sheets').dcr_default_policy == value
+
+    @pytest.mark.parametrize('value', ['', '   '])
+    def test_empty_policy_falls_back_to_readonly(
+        self, monkeypatch: pytest.MonkeyPatch, value: str
+    ) -> None:
+        monkeypatch.setenv('DOCS_OAUTH_DCR_DEFAULT_POLICY', value)
+
+        assert ServiceConfig.from_env('docs').dcr_default_policy == (
+            'mcp_readonly_v1'
+        )
+
+    @pytest.mark.parametrize(
+        'value', ['reauthorization_required', 'full', 'LEGACY_FULL']
+    )
+    def test_other_policy_values_are_rejected(
+        self, monkeypatch: pytest.MonkeyPatch, value: str
+    ) -> None:
+        monkeypatch.setenv('GMAIL_OAUTH_DCR_DEFAULT_POLICY', value)
+
+        with pytest.raises(ValueError, match='GMAIL_OAUTH_DCR_DEFAULT_POLICY'):
+            ServiceConfig.from_env('gmail')
+
+    def test_accepted_values_match_oauth_state_policies(self) -> None:
+        assert DCR_POLICIES == (MCP_READONLY_V1, LEGACY_FULL)
 
 
 # === Invalid configuration cases ===
