@@ -7,6 +7,7 @@ from typing import Annotated
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
+from google_workspace_mcp.common.config import GmailReadBudget
 from google_workspace_mcp.transport.authorization import ToolRegistrar
 
 from ..client import GmailGateway
@@ -24,8 +25,10 @@ from .common import Recipient, run_gateway
 def register_draft_tools(
     registrar: ToolRegistrar,
     gateway: GmailGateway,
+    read_budget: GmailReadBudget | None = None,
 ) -> None:
     """Register Gmail draft tools."""
+    budget = read_budget or GmailReadBudget()
     readonly = ToolAnnotations(
         read_only_hint=True,
         destructive_hint=False,
@@ -52,6 +55,7 @@ def register_draft_tools(
             gateway.list_drafts,
             page_size,
             page_token,
+            read_budget=budget,
         )
 
     @registrar.tool(
@@ -66,7 +70,9 @@ def register_draft_tools(
         draft_id: Annotated[str, Field(min_length=1, max_length=256)],
     ) -> DraftDetail:
         """Read one Gmail draft."""
-        return await run_gateway(gateway.get_draft, draft_id)
+        return await run_gateway(
+            gateway.get_draft, draft_id, read_budget=budget
+        )
 
     compose = ToolAnnotations(
         read_only_hint=False,

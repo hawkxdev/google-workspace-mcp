@@ -1,5 +1,6 @@
 """Register all Gmail tools."""
 
+from google_workspace_mcp.common.config import GmailReadBudget
 from google_workspace_mcp.common.managed_files import ManagedFileStore
 from google_workspace_mcp.transport.authorization import ToolRegistrar
 
@@ -14,11 +15,12 @@ def register_gmail_tools(
     registrar: ToolRegistrar,
     gateway: GmailGateway,
     attachments: ManagedFileStore,
+    read_budget: GmailReadBudget | None = None,
 ) -> None:
     """Register complete Gmail tools."""
-    register_read_tools(registrar, gateway)
+    register_read_tools(registrar, gateway, read_budget)
     register_mutation_tools(registrar, gateway, attachments)
-    register_draft_tools(registrar, gateway)
+    register_draft_tools(registrar, gateway, read_budget)
     register_send_tools(registrar, gateway)
 
 

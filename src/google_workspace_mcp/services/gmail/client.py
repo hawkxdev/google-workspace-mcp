@@ -10,6 +10,10 @@ from google.auth.exceptions import TransportError
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from google_workspace_mcp.common.deadline import (
+    OperationTimeout,
+    current_deadline,
+)
 from google_workspace_mcp.google_auth import (
     GoogleCredentials,
     GoogleCredentialStore,
@@ -28,6 +32,7 @@ from .constants import (
     USER_ID,
 )
 from .errors import GmailInputError, GmailProviderError
+from .http import authorized_read_http
 from .mime import (
     build_plain_message,
     build_reply_message,
@@ -58,6 +63,15 @@ ServiceBuilder = Callable[[GoogleCredentials], Any]
 
 def build_gmail_service(credentials: GoogleCredentials) -> Any:
     """Build Gmail provider service."""
+    deadline = current_deadline()
+    if deadline is not None:
+        return build(
+            'gmail',
+            'v1',
+            http=authorized_read_http(credentials, deadline),
+            cache_discovery=False,
+            static_discovery=True,
+        )
     return build(
         'gmail',
         'v1',
@@ -127,8 +141,16 @@ class GmailGateway:
     def _service(self) -> Any:
         """Build authenticated Gmail service."""
         try:
-            credentials = self._store.refresh()
-            return self._service_builder(credentials)
+            deadline = current_deadline()
+            if deadline is None:
+                credentials = self._store.refresh()
+                return self._service_builder(credentials)
+            with deadline.measure('credentials'):
+                credentials = self._store.refresh()
+            with deadline.measure('service'):
+                return self._service_builder(credentials)
+        except OperationTimeout:
+            raise
         except GmailProviderError:
             raise
         except Exception:
@@ -152,7 +174,39 @@ class GmailGateway:
     def _execute_raw(self, request: Any) -> Any:
         """Execute raw Gmail request."""
         try:
+            deadline = current_deadline()
+            if deadline is not None:
+                for attempt in range(self._num_retries + 1):
+                    try:
+                        with deadline.measure('provider'):
+                            return request.execute(num_retries=0)
+                    except OperationTimeout:
+                        raise
+                    except (
+                        HttpError,
+                        TransportError,
+                        TimeoutError,
+                        ConnectionError,
+                        OSError,
+                    ) as error:
+                        retryable = not isinstance(error, HttpError) or (
+                            int(getattr(error.resp, 'status', 0)) >= 500
+                            or int(getattr(error.resp, 'status', 0)) == 429
+                            or (
+                                int(getattr(error.resp, 'status', 0)) == 403
+                                and self._http_reason(error)
+                                in {
+                                    'rateLimitExceeded',
+                                    'userRateLimitExceeded',
+                                }
+                            )
+                        )
+                        if not retryable or attempt >= self._num_retries:
+                            raise
+                        deadline.pause(deadline.backoff_seconds * 2**attempt)
             return request.execute(num_retries=self._num_retries)
+        except OperationTimeout:
+            raise
         except HttpError as error:
             status = int(getattr(error.resp, 'status', 0))
             reason = self._http_reason(error)
@@ -173,7 +227,14 @@ class GmailGateway:
                     status, 'Gmail request is temporarily unavailable'
                 )
             raise GmailProviderError(message) from None
-        except TransportError, TimeoutError, ConnectionError, OSError:
+        except TimeoutError:
+            deadline = current_deadline()
+            if deadline is not None:
+                raise GmailProviderError(str(deadline.timeout())) from None
+            raise GmailProviderError(
+                'Gmail request is temporarily unavailable'
+            ) from None
+        except TransportError, ConnectionError, OSError:
             raise GmailProviderError(
                 'Gmail request is temporarily unavailable'
             ) from None

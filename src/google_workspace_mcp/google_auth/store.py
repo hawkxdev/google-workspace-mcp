@@ -16,7 +16,12 @@ from typing import Any
 from google.auth.exceptions import RefreshError, TransportError
 from google.auth.transport.requests import Request
 
-from google_workspace_mcp.common.retry import execute_with_retry
+from google_workspace_mcp.common.deadline import (
+    OperationDeadline,
+    OperationTimeout,
+    current_deadline,
+)
+from google_workspace_mcp.common.retry import RetryConfig, execute_with_retry
 from google_workspace_mcp.google_auth.credentials import GoogleCredentials
 from google_workspace_mcp.google_auth.errors import (
     GoogleAuthError,
@@ -29,6 +34,35 @@ _DIRECTORY_FLAGS = (
     os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0) | getattr(os, 'O_NOFOLLOW', 0)
 )
 _NOFOLLOW = getattr(os, 'O_NOFOLLOW', 0)
+_LOCK_POLL_SECONDS = 0.05
+
+
+class DeadlineRequest:
+    """Bound credential HTTP requests."""
+
+    def __init__(self, request: Any, deadline: OperationDeadline) -> None:
+        """Initialize credential request wrapper."""
+        self.request = request
+        self.deadline = deadline
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Apply remaining credential budget."""
+        self.deadline.phase = 'credentials'
+        timeout = min(
+            self.deadline.attempt_seconds,
+            self.deadline.remaining(),
+        )
+        configured = kwargs.get('timeout')
+        if isinstance(configured, int | float):
+            timeout = min(timeout, configured)
+        kwargs['timeout'] = timeout
+        try:
+            result = self.request(*args, **kwargs)
+        except Exception:
+            self.deadline.remaining()
+            raise
+        self.deadline.remaining()
+        return result
 
 
 def validate_credential_path(
@@ -190,7 +224,19 @@ class GoogleCredentialStore:
         """Hold exclusive credential lock."""
         lock_fd = self._open_lock_fd(directory_fd)
         try:
-            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            deadline = current_deadline()
+            if deadline is None:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            else:
+                while True:
+                    deadline.remaining()
+                    try:
+                        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        deadline.cancelled.wait(
+                            min(_LOCK_POLL_SECONDS, deadline.remaining())
+                        )
             try:
                 yield
             finally:
@@ -358,10 +404,40 @@ class GoogleCredentialStore:
                     self._validate_scopes(stored.scopes)
                     return stored
                 resolved_request = request or Request()
-                try:
-                    execute_with_retry(
-                        lambda: library_credentials.refresh(resolved_request)
+                deadline = current_deadline()
+                if deadline is not None:
+                    if request is None:
+                        deadline.cleanups.append(
+                            resolved_request.session.close
+                        )
+                    resolved_request = DeadlineRequest(
+                        resolved_request, deadline
                     )
+
+                def refresh_attempt() -> None:
+                    """Check credential refresh budget."""
+                    if deadline is not None:
+                        deadline.phase = 'credentials'
+                        deadline.remaining()
+                    library_credentials.refresh(resolved_request)
+                    if deadline is not None:
+                        deadline.remaining()
+
+                try:
+                    if deadline is None:
+                        execute_with_retry(refresh_attempt)
+                    else:
+                        execute_with_retry(
+                            refresh_attempt,
+                            config=RetryConfig(
+                                initial_delay=deadline.backoff_seconds,
+                                max_delay=deadline.attempt_seconds,
+                                jitter=False,
+                            ),
+                            sleep_fn=deadline.pause,
+                        )
+                except OperationTimeout:
+                    raise
                 except RefreshError as exc:
                     data = _refresh_error_data(exc)
                     if (
@@ -393,6 +469,8 @@ class GoogleCredentialStore:
                     library_credentials,
                     fallback_scopes=effective_scopes,
                 )
+                if deadline is not None:
+                    deadline.remaining()
                 self._save_locked(updated, directory_fd)
                 return updated
         finally:

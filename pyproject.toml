@@ -97,7 +97,7 @@ python_version = '3.14'
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ['googleapiclient.*', 'google_auth_oauthlib.*']
+module = ['googleapiclient.*', 'google_auth_oauthlib.*', 'httplib2', 'requests.*']
 ignore_missing_imports = true
 
 [tool.pyright]

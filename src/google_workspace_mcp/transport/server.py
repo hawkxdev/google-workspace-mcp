@@ -126,6 +126,7 @@ def build_app(
 ) -> Starlette:
     """Assemble transport Starlette app."""
     audit = AuditLogger(config.audit_log_path)
+    server.set_tool_audit(config.service_id, audit.log_event)
     oauth = OAuthEndpoints(
         config=config,
         oauth_state=state,

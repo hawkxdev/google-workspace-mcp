@@ -33,6 +33,7 @@ class GmailExtension(Extension):
             (GMAIL_SCOPE,),
         )
         self._gateway = gateway_factory(self._store)
+        self._read_budget = config.gmail_read_budget
         self._attachments = ManagedFileStore(
             config.download_path,
             MAX_ATTACHMENT_BYTES,
@@ -49,4 +50,5 @@ class GmailExtension(Extension):
             registrar,
             self._gateway,
             self._attachments,
+            self._read_budget,
         )

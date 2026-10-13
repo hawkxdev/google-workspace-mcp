@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ResourceError, ToolError
 
-from google_workspace_mcp.auth.context import current_principal
+from google_workspace_mcp.audit.logger import AuditError
+from google_workspace_mcp.auth.context import (
+    current_principal,
+    current_request_context,
+)
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class PolicyMCPServer(MCPServer):
@@ -19,7 +28,18 @@ class PolicyMCPServer(MCPServer):
         self._required_tool_capabilities: dict[str, str] = {}
         self._readonly_capabilities: set[str] = set()
         self._readonly_tool_names: set[str] = set()
+        self._tool_audit: Callable[[dict[str, object]], None] | None = None
+        self._audit_service = ''
         super().__init__(name=name, **kwargs)
+
+    def set_tool_audit(
+        self,
+        service: str,
+        writer: Callable[[dict[str, object]], None],
+    ) -> None:
+        """Bind service invocation audit."""
+        self._audit_service = service
+        self._tool_audit = writer
 
     def register_capability(
         self,
@@ -86,11 +106,49 @@ class PolicyMCPServer(MCPServer):
         context: Any = None,
     ) -> Any:
         """Execute authorized tool call."""
-        if not self._tool_allowed(name):
-            raise ToolError(
-                'Forbidden: tool is not permitted for this principal'
+        started = time.monotonic()
+        request = current_request_context()
+        known = self._tool_manager.get_tool(name) is not None
+        outcome = 'tool_error' if known else 'unknown_tool'
+        try:
+            if not self._tool_allowed(name):
+                if known:
+                    outcome = 'policy_denial'
+                raise ToolError(
+                    'Forbidden: tool is not permitted for this principal'
+                )
+            result = await super().call_tool(name, arguments, context=context)
+            outcome = (
+                'tool_error'
+                if getattr(result, 'is_error', False)
+                else 'success'
             )
-        return await super().call_tool(name, arguments, context=context)
+            return result
+        finally:
+            if self._tool_audit is not None:
+                record: dict[str, object] = {
+                    'timestamp': datetime.now(UTC).isoformat(),
+                    'operation': 'tool_invocation',
+                    'service': self._audit_service,
+                    'tool_name': name if known else '<unknown>',
+                    'request_id': request.request_id if request else None,
+                    'elapsed_seconds': max(0.0, time.monotonic() - started),
+                    'client_id': request.principal.client_id
+                    if request
+                    else None,
+                    'auth_policy': request.principal.policy
+                    if request
+                    else None,
+                    'operation_status': outcome,
+                }
+                try:
+                    self._tool_audit(record)
+                except AuditError:
+                    _LOGGER.error(
+                        'tool_audit_write_failed service=%s request_id=%s',
+                        self._audit_service,
+                        record['request_id'],
+                    )
 
     async def list_resources(self) -> list[Any]:
         """List permitted server resources."""

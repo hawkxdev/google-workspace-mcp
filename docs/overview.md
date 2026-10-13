@@ -87,6 +87,46 @@ A service process is assembled from four layers.
 
 Configuration is immutable after startup.
 
+### Gmail read deadlines
+
+The seven read-only Gmail tools share one total deadline across thread-pool waiting, credential-file locking, credential refresh, service construction, every provider request, and retry backoff. Each search page and its metadata requests consume the same budget. An expired read returns a controlled error instead of a partial successful result.
+
+| Environment variable | Default | Meaning |
+|---|---|---|
+| `GMAIL_READ_TOTAL_SECONDS` | `45` | Total read response budget |
+| `GMAIL_READ_ATTEMPT_SECONDS` | `10` | Maximum socket wait for each credential or provider transmission, capped by remaining total time |
+| `GMAIL_READ_BACKOFF_SECONDS` | `0.5` | Initial retry pause, doubled for the next provider retry |
+
+Durations must be finite and positive. The attempt duration cannot exceed the total duration; initial backoff must be below the total duration. Gmail validates these settings at startup; the other four services do not consume them. The default total leaves 15 seconds within a 60-second caller window for ingress, response serialization and transport. This is a configured margin, not a guarantee about an arbitrary caller or network. Choose a smaller total when a caller has a shorter deadline.
+
+Reads use the Google discovery client with a service-local, authenticated requests transport. The transport disables automatic redirects and provider authentication replay. Provider SDK retries are disabled for reads; the gateway retries transient transport failures, HTTP 429/5xx and recognized rate-limit 403 responses at most twice, only while the next pause and transmission fit the remaining budget. A provider 401 requires renewed authorization. Credential exchanges also check remaining time before every transmission, including exchanges attempted internally by Google auth. No process-wide socket timeout is changed.
+
+The asynchronous response deadline signals cancellation to the synchronous worker. It cannot forcibly terminate an already running Python thread or interrupt operating-system DNS resolution. An in-flight transmission can finish later; it cannot start another transmission or retry after the cancellation check. Owned sessions close when the worker returns. This bounds the response and prevents follow-on work; it does not claim instant physical termination of every network operation.
+
+Phase diagnostics contain only `phase`, `outcome`, phase duration, total elapsed duration, and the existing authenticated `request_id`. Timeout errors include phase, elapsed duration and that ID. Provider SDK and HTTP-library diagnostics are suppressed only in the active Gmail read context, including debug-level URL and retry messages; unrelated operations retain their diagnostics. Queries, message bodies, addresses and credentials are excluded. These phase logs do not replace the separate OAuth audit log or implement general tool-invocation auditing.
+
+These budgets do not apply to sends, replies, draft mutations, label mutations or attachment publication. Their existing execution policy is unchanged; the read retry loop never wraps a mutation.
+
+### Tool invocation audit
+
+All five services append one `tool_invocation` record to their existing audit JSONL for each `tools/call` reaching the authenticated tool-call path. Existing OAuth refresh records retain their schemas and destination. The invocation record has exactly these fields:
+
+| Field | Meaning |
+|---|---|
+| `timestamp` | UTC completion time |
+| `operation` | `tool_invocation` |
+| `service` | Service identity |
+| `tool_name` | Registered tool name; `<unknown>` for unregistered input |
+| `request_id` | Existing authenticated request ID |
+| `elapsed_seconds` | Monotonic execution duration |
+| `client_id` | Authenticated OAuth client ID |
+| `auth_policy` | Authenticated policy |
+| `operation_status` | `success`, `tool_error`, `policy_denial` or `unknown_tool` |
+
+No arguments, response contents, exception text, tokens or arbitrary unknown-tool strings enter this record. Unknown-tool masking prevents attacker-controlled names from becoming a log payload. Returned tool errors and raised errors both use `tool_error`. Requests denied before authenticated tool dispatch do not create a tool-invocation record. Calls made directly without authentication context retain null authentication fields.
+
+Audit-storage failures produce a scrubbed `tool_audit_write_failed` diagnostic with service and request ID. They do not replace an already performed operation's result or replay its side effects. The operator must investigate this diagnostic; an append failure is not a successful audit write. Existing audit-path validation and credential-event failure behavior are unchanged.
+
 ### Service extension
 
 Each service extension owns:

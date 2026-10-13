@@ -105,6 +105,8 @@ uv run --no-sync mypy src
 
 The suite runs without network access, Google credentials, or a database. Provider calls are covered by transport doubles, so a test that reaches the network is a defect rather than an environment problem.
 
+Gmail read-only tools have a default 45-second total response budget and 10-second credential/provider socket waits. Configure `GMAIL_READ_TOTAL_SECONDS`, `GMAIL_READ_ATTEMPT_SECONDS` and `GMAIL_READ_BACKOFF_SECONDS` as described in [Gmail read deadlines](docs/overview.md#gmail-read-deadlines). Other services and mutation policies are unchanged.
+
 ## Runtime configuration
 
 Every service reads variables with its uppercase prefix:
