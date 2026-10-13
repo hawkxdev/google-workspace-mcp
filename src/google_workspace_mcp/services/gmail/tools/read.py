@@ -7,6 +7,7 @@ from typing import Annotated
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
+from google_workspace_mcp.common.config import GmailReadBudget
 from google_workspace_mcp.transport.authorization import ToolRegistrar
 
 from ..client import GmailGateway
@@ -24,8 +25,10 @@ from .common import run_gateway
 def register_read_tools(
     registrar: ToolRegistrar,
     gateway: GmailGateway,
+    read_budget: GmailReadBudget | None = None,
 ) -> None:
     """Register Gmail read tools."""
+    budget = read_budget or GmailReadBudget()
     readonly = ToolAnnotations(
         read_only_hint=True,
         destructive_hint=False,
@@ -54,6 +57,7 @@ def register_read_tools(
             query,
             page_size,
             page_token,
+            read_budget=budget,
         )
 
     @registrar.tool(
@@ -77,6 +81,7 @@ def register_read_tools(
             query,
             page_size,
             page_token,
+            read_budget=budget,
         )
 
     @registrar.tool(
@@ -91,7 +96,9 @@ def register_read_tools(
         message_id: Annotated[str, Field(min_length=1, max_length=256)],
     ) -> MessageDetail:
         """Read one Gmail message."""
-        return await run_gateway(gateway.get_message, message_id)
+        return await run_gateway(
+            gateway.get_message, message_id, read_budget=budget
+        )
 
     @registrar.tool(
         name='gmail_get_thread',
@@ -105,7 +112,9 @@ def register_read_tools(
         thread_id: Annotated[str, Field(min_length=1, max_length=256)],
     ) -> ThreadDetail:
         """Read one Gmail thread."""
-        return await run_gateway(gateway.get_thread, thread_id)
+        return await run_gateway(
+            gateway.get_thread, thread_id, read_budget=budget
+        )
 
     @registrar.tool(
         name='gmail_list_labels',
@@ -117,4 +126,4 @@ def register_read_tools(
     )
     async def gmail_list_labels() -> LabelsResponse:
         """List available Gmail labels."""
-        return await run_gateway(gateway.list_labels)
+        return await run_gateway(gateway.list_labels, read_budget=budget)

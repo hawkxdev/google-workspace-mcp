@@ -1,6 +1,7 @@
 """Shared service configuration."""
 
 import ipaddress
+import math
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -243,6 +244,51 @@ def validate_forwarded_allow_ips(
 
 
 @dataclass(frozen=True, slots=True)
+class GmailReadBudget:
+    """Configure Gmail read deadlines."""
+
+    total_seconds: float = 45.0
+    attempt_seconds: float = 10.0
+    backoff_seconds: float = 0.5
+
+    def __post_init__(self) -> None:
+        """Validate finite positive budgets."""
+        for value in (
+            self.total_seconds,
+            self.attempt_seconds,
+            self.backoff_seconds,
+        ):
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(
+                    'Gmail read budgets must be finite and positive'
+                )
+        if self.attempt_seconds > self.total_seconds:
+            raise ValueError('Gmail attempt budget exceeds total read budget')
+        if self.backoff_seconds >= self.total_seconds:
+            raise ValueError('Gmail backoff must be below total read budget')
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str]) -> GmailReadBudget:
+        """Parse Gmail read budgets."""
+        defaults = cls()
+        values: dict[str, float] = {}
+        for field_name, key in (
+            ('total_seconds', 'GMAIL_READ_TOTAL_SECONDS'),
+            ('attempt_seconds', 'GMAIL_READ_ATTEMPT_SECONDS'),
+            ('backoff_seconds', 'GMAIL_READ_BACKOFF_SECONDS'),
+        ):
+            try:
+                values[field_name] = float(
+                    env.get(key, str(getattr(defaults, field_name)))
+                )
+            except ValueError as exc:
+                raise ValueError(
+                    f'{key} must be a duration in seconds'
+                ) from exc
+        return cls(**values)
+
+
+@dataclass(frozen=True, slots=True)
 class ServiceConfig:
     """Store service runtime settings."""
 
@@ -264,6 +310,7 @@ class ServiceConfig:
     access_token_ttl_seconds: int
     refresh_token_ttl_seconds: int
     dcr_default_policy: str = DCR_POLICIES[0]
+    gmail_read_budget: GmailReadBudget = field(default_factory=GmailReadBudget)
 
     @property
     def resource_url(self) -> str:
@@ -369,6 +416,11 @@ class ServiceConfig:
                 f'{prefix}_OAUTH_DCR_DEFAULT_POLICY',
                 DCR_POLICIES[0],
                 DCR_POLICIES,
+            ),
+            gmail_read_budget=(
+                GmailReadBudget.from_env(env)
+                if service == 'gmail'
+                else GmailReadBudget()
             ),
         )
         _ = config.resource_url
