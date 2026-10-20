@@ -4,6 +4,17 @@ Five isolated remote MCP services for Gmail, Google Calendar, Google Drive, Goog
 
 > **Status: pre-alpha.** All five service processes and 55 service-owned tools are locally runnable. The deployed revision runs as five isolated loopback services behind the public HTTPS vhost; production Google credentials remain server-only and are never included in the repository.
 
+## Requirements and system behavior
+
+The public documentation states integration behavior as checkable contracts:
+
+- [Integration reference](docs/integrations.md): all 55 tools with per-service scope ownership, explicit bounds for search, pages and sizes, and error schemas.
+- [Protocol contract](docs/protocol.md): endpoints, health and readiness semantics, and the error behavior each service commits to.
+- [Architecture overview](docs/overview.md): isolation boundaries, the two-layer authorization model, and failure semantics that prefer conflicts and controlled errors over silent overwrites or partial results.
+- [Evaluation suite](evals/README.md): 50 synthetic read-only tasks in validated XML catalogs with answer normalizers and allowed-tool routes.
+
+Fixtures are synthetic and read-only: they verify tool routing and answer contracts, not live Google behavior.
+
 ## Public pages
 
 - [Homepage](https://mcp.hawkxdev.dev/)
